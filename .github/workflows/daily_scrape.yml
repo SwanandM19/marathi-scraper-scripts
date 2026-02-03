@@ -1,11 +1,56 @@
+# name: Daily News Scraper
+
+# on:
+#   schedule:
+#     # Runs at 6:00 PM IST (12:30 PM UTC) every day
+#     - cron: '30 12 * * *'
+  
+#   # Also allow manual trigger
+#   workflow_dispatch:
+
+# jobs:
+#   scrape-news:
+#     runs-on: ubuntu-latest
+    
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+      
+#       - name: Set up Python 3.11
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
+      
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+      
+#       - name: Run news scraper
+#         env:
+#           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+#         run: python scraper.py
+      
+#       - name: Commit and push results
+#         run: |
+#           git config --local user.email "github-actions[bot]@users.noreply.github.com"
+#           git config --local user.name "github-actions[bot]"
+#           git add -A
+#           git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update: News scraped on $(date '+%Y-%m-%d %H:%M:%S IST')"
+#           git push
+
+
 name: Daily News Scraper
 
 on:
   schedule:
-    # Runs at 6:00 PM IST (12:30 PM UTC) every day
+    # TEST: Runs at 3:20 PM IST (9:50 AM UTC) - for testing today
+    - cron: '50 9 * * *'
+    
+    # PRODUCTION: Runs at 6:00 PM IST (12:30 PM UTC) - daily
     - cron: '30 12 * * *'
   
-  # Also allow manual trigger
+  # Allow manual trigger anytime
   workflow_dispatch:
 
 jobs:
@@ -31,10 +76,23 @@ jobs:
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
         run: python scraper.py
       
+      - name: Create archives folder
+        run: mkdir -p archives
+      
+      - name: Archive dated backup
+        run: |
+          if [ -f "latest_news.json" ]; then
+            cp latest_news.json "archives/news_$(date '+%Y%m%d_%H%M').json"
+          fi
+      
+      - name: Keep only last 7 days in archives
+        run: |
+          find archives/ -name "news_*.json" -type f -mtime +7 -delete || true
+      
       - name: Commit and push results
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add -A
-          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update: News scraped on $(date '+%Y-%m-%d %H:%M:%S IST')"
+          git diff --quiet && git diff --staged --quiet || git commit -m "📰 News update: $(date '+%Y-%m-%d %I:%M %p IST')"
           git push
