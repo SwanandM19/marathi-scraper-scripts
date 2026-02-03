@@ -68,18 +68,85 @@
 
 
 
-name: Daily News Scraper with Google Sheets
+# name: Daily News Scraper with Google Sheets
 
-permissions:
-  contents: write
+# permissions:
+#   contents: write
+
+# on:
+#   schedule:
+#     # TEST: Runs at 3:50 PM IST (10:20 AM UTC)
+#     - cron: '20 10 * * *'
+    
+#     # PRODUCTION: Runs at 6:00 PM IST (12:30 PM UTC)
+#     - cron: '30 12 * * *'
+  
+#   workflow_dispatch:
+
+# jobs:
+#   scrape-news:
+#     runs-on: ubuntu-latest
+    
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+      
+#       - name: Set up Python 3.11
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
+      
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+      
+#       - name: Install Playwright browsers
+#         run: playwright install chromium
+      
+#       - name: Install Playwright system dependencies
+#         run: playwright install-deps chromium
+      
+#       # 🆕 NEW: Create Google credentials file from secret
+#       - name: Create Google Sheets credentials
+#         run: |
+#           echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+      
+#       - name: Run news scraper
+#         env:
+#           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+#         run: python scraper.py
+      
+#       # 🆕 OPTIONAL: Save backup JSON files (if you want local copies too)
+#       - name: Create archives folder
+#         run: mkdir -p archives
+      
+#       - name: Archive run log
+#         run: |
+#           echo "Script completed at $(date '+%Y-%m-%d %H:%M:%S IST')" > "archives/run_$(date '+%Y%m%d_%H%M').log"
+      
+#       - name: Keep only last 7 days in archives
+#         run: |
+#           find archives/ -name "run_*.log" -type f -mtime +7 -delete || true
+      
+#       - name: Commit and push results
+#         run: |
+#           git config --local user.email "github-actions[bot]@users.noreply.github.com"
+#           git config --local user.name "github-actions[bot]"
+#           git add -A
+#           git diff --quiet && git diff --staged --quiet || git commit -m "📰 Script run: $(date '+%Y-%m-%d %I:%M %p IST')"
+#           git push
+
+
+name: Daily News Scraper with Google Sheets
 
 on:
   schedule:
-    # TEST: Runs at 3:50 PM IST (10:20 AM UTC)
-    - cron: '20 10 * * *'
+    # 4:15 PM IST = 10:45 AM UTC
+    - cron: '45 10 * * *'
     
-    # PRODUCTION: Runs at 6:00 PM IST (12:30 PM UTC)
-    - cron: '30 12 * * *'
+    # 4:30 PM IST = 11:00 AM UTC
+    - cron: '0 11 * * *'
   
   workflow_dispatch:
 
@@ -107,7 +174,6 @@ jobs:
       - name: Install Playwright system dependencies
         run: playwright install-deps chromium
       
-      # 🆕 NEW: Create Google credentials file from secret
       - name: Create Google Sheets credentials
         run: |
           echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
@@ -117,22 +183,8 @@ jobs:
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
         run: python scraper.py
       
-      # 🆕 OPTIONAL: Save backup JSON files (if you want local copies too)
-      - name: Create archives folder
-        run: mkdir -p archives
+      - name: Clean up credentials
+        run: rm -f credentials.json
       
-      - name: Archive run log
-        run: |
-          echo "Script completed at $(date '+%Y-%m-%d %H:%M:%S IST')" > "archives/run_$(date '+%Y%m%d_%H%M').log"
-      
-      - name: Keep only last 7 days in archives
-        run: |
-          find archives/ -name "run_*.log" -type f -mtime +7 -delete || true
-      
-      - name: Commit and push results
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add -A
-          git diff --quiet && git diff --staged --quiet || git commit -m "📰 Script run: $(date '+%Y-%m-%d %I:%M %p IST')"
-          git push
+      - name: Workflow complete
+        run: echo "✅ Scraping complete! Check Google Sheets for results."
