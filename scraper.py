@@ -375,7 +375,7 @@ from openai import OpenAI
 import re
 import gspread
 from google.oauth2.service_account import Credentials
-
+import os
 
 # Initialize Perplexity client
 
