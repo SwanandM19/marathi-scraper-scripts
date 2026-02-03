@@ -1,3 +1,7 @@
 crawl4ai
 beautifulsoup4
 openai
+gspread
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
