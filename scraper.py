@@ -1874,9 +1874,10 @@ async def main():
         category_counts[cat] = category_counts.get(cat, 0) + 1
 
     print("\n📊 Category Breakdown:")
-    for cat, count in sorted(category_counts.items(), key=lambda x: -x):[1]
+    for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
         bar = "█" * count
         print(f"   {cat.upper():<15} {bar} ({count})")
+
 
     # Sort by importance and take top 50
     priority_order = {'high': 1, 'medium': 2, 'low': 3}
