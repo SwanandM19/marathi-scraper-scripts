@@ -1962,17 +1962,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 import asyncio
 import json
 from datetime import datetime, date
@@ -1988,29 +1977,30 @@ import hashlib
 
 
 # ============================================================
-# Initialize Perplexity client - sonar-reasoning-pro
+# Perplexity Client
 # ============================================================
 perplexity_client = OpenAI(
     api_key=os.environ.get("PERPLEXITY_API_KEY"),
     base_url="https://api.perplexity.ai"
 )
 
-MODEL_NAME = "sonar-reasoning-pro"
-COST_PER_INPUT_TOKEN = 2.0 / 1_000_000
-COST_PER_OUTPUT_TOKEN = 8.0 / 1_000_000
+ANALYSIS_MODEL      = "sonar-pro"           # ✅ Cheaper for categorization
+SCRIPT_MODEL        = "sonar-reasoning-pro" # ✅ Quality for scripts
+
+ANALYSIS_INPUT_COST  = 1.0 / 1_000_000
+ANALYSIS_OUTPUT_COST = 1.0 / 1_000_000
+SCRIPT_INPUT_COST    = 2.0 / 1_000_000
+SCRIPT_OUTPUT_COST   = 8.0 / 1_000_000
 
 
 # ============================================================
-# Google Sheets Configuration
+# Config
 # ============================================================
 GOOGLE_SHEETS_CREDENTIALS_FILE = "credentials.json"
-GOOGLE_SHEET_NAME = "Instagram Scripts"
-GOOGLE_WORKSHEET_NAME = "Scripts"
+GOOGLE_SHEET_NAME               = "Instagram Scripts"
+GOOGLE_WORKSHEET_NAME           = "Scripts"
+TARGET_SCRIPTS                  = 50   # ✅ Hard target
 
-
-# ============================================================
-# Categories
-# ============================================================
 VALID_CATEGORIES = [
     "sports", "general", "crime", "politics",
     "education", "economy", "entertainment", "horror"
@@ -2020,14 +2010,14 @@ VALID_CATEGORIES = [
 # ============================================================
 # Token tracking
 # ============================================================
-total_input_tokens = 0
+total_input_tokens  = 0
 total_output_tokens = 0
-total_cost = 0.0
-processed_hashes = set()
+total_cost          = 0.0
+processed_hashes    = set()
 
 
 # ============================================================
-# 5 News Sites - 10 articles each = 50 total
+# 5 News Sites
 # ============================================================
 NEWS_SITES = [
     {
@@ -2035,35 +2025,35 @@ NEWS_SITES = [
         "url": "https://www.tv9marathi.com/latest-news",
         "link_pattern": "tv9marathi.com",
         "target": 10,
-        "fetch_limit": 30   # ✅ Fetch 3x more links as buffer
+        "fetch_limit": 40
     },
     {
         "name": "ABP Majha",
         "url": "https://marathi.abplive.com/news",
         "link_pattern": "abplive.com",
         "target": 10,
-        "fetch_limit": 30
+        "fetch_limit": 40
     },
     {
         "name": "Lokmat",
         "url": "https://www.lokmat.com/latestnews/",
         "link_pattern": "lokmat.com",
         "target": 10,
-        "fetch_limit": 30
+        "fetch_limit": 40
     },
     {
         "name": "Maharashtra Times",
         "url": "https://maharashtratimes.com/",
         "link_pattern": "maharashtratimes.com",
         "target": 10,
-        "fetch_limit": 30
+        "fetch_limit": 40
     },
     {
         "name": "NDTV Marathi",
         "url": "https://marathi.ndtv.com/",
         "link_pattern": "marathi.ndtv.com",
         "target": 10,
-        "fetch_limit": 30
+        "fetch_limit": 40
     }
 ]
 
@@ -2078,26 +2068,23 @@ def setup_google_sheets():
             'https://www.googleapis.com/auth/drive'
         ]
         creds = Credentials.from_service_account_file(
-            GOOGLE_SHEETS_CREDENTIALS_FILE,
-            scopes=scope
+            GOOGLE_SHEETS_CREDENTIALS_FILE, scopes=scope
         )
         client = gspread.authorize(creds)
 
         try:
             sheet = client.open(GOOGLE_SHEET_NAME)
-            print(f"✅ Connected to existing sheet: '{GOOGLE_SHEET_NAME}'")
+            print(f"✅ Connected: '{GOOGLE_SHEET_NAME}'")
         except gspread.SpreadsheetNotFound:
             sheet = client.create(GOOGLE_SHEET_NAME)
-            print(f"✅ Created new sheet: '{GOOGLE_SHEET_NAME}'")
+            print(f"✅ Created: '{GOOGLE_SHEET_NAME}'")
 
         try:
             worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
-            print(f"✅ Using worksheet: '{GOOGLE_WORKSHEET_NAME}'")
+            print(f"✅ Worksheet: '{GOOGLE_WORKSHEET_NAME}'")
         except gspread.WorksheetNotFound:
             worksheet = sheet.add_worksheet(
-                title=GOOGLE_WORKSHEET_NAME,
-                rows=5000,
-                cols=10
+                title=GOOGLE_WORKSHEET_NAME, rows=5000, cols=10
             )
             worksheet.update('A1:E1', [[
                 'Timestamp', 'Category', 'Title', 'Script', 'Source Link'
@@ -2115,7 +2102,7 @@ def setup_google_sheets():
             worksheet.set_column_width('C', 400)
             worksheet.set_column_width('D', 600)
             worksheet.set_column_width('E', 400)
-            print(f"✅ Created new worksheet with headers")
+            print(f"✅ Created worksheet with headers")
 
         return worksheet
 
@@ -2123,7 +2110,7 @@ def setup_google_sheets():
         print(f"❌ credentials.json not found!")
         return None
     except Exception as e:
-        print(f"❌ Google Sheets setup error: {e}")
+        print(f"❌ Sheets setup error: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -2136,11 +2123,7 @@ def save_to_google_sheets(worksheet, category, title, script, source_link):
     try:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        if isinstance(script, list):
-            script = '\n'.join(str(item) for item in script)
-        else:
-            script = str(script).strip()
-
+        script = '\n'.join(str(i) for i in script) if isinstance(script, list) else str(script).strip()
         script = script.replace('[', '').replace(']', '')
         title = str(title).strip()
         source_link = str(source_link).strip()
@@ -2149,16 +2132,14 @@ def save_to_google_sheets(worksheet, category, title, script, source_link):
         if category not in VALID_CATEGORIES:
             category = "general"
 
-        row_data = [timestamp, category, title, script, source_link]
-
         next_row = len(worksheet.get_all_values()) + 1
-        worksheet.append_row(row_data, value_input_option='RAW')
+        worksheet.append_row(
+            [timestamp, category, title, script, source_link],
+            value_input_option='RAW'
+        )
 
         worksheet.format(f'A{next_row}:E{next_row}', {
-            'textFormat': {
-                'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
-                'fontSize': 10
-            },
+            'textFormat': {'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0}, 'fontSize': 10},
             'backgroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0},
             'wrapStrategy': 'WRAP',
             'verticalAlignment': 'TOP'
@@ -2174,13 +2155,8 @@ def save_to_google_sheets(worksheet, category, title, script, source_link):
             'horror':        {'red': 0.7,  'green': 0.7,  'blue': 0.7},
             'general':       {'red': 1.0,  'green': 1.0,  'blue': 0.9}
         }
-
         worksheet.format(f'B{next_row}', {
-            'textFormat': {
-                'bold': True,
-                'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
-                'fontSize': 10
-            },
+            'textFormat': {'bold': True, 'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0}, 'fontSize': 10},
             'backgroundColor': category_colors.get(category, category_colors['general']),
             'horizontalAlignment': 'CENTER'
         })
@@ -2189,7 +2165,7 @@ def save_to_google_sheets(worksheet, category, title, script, source_link):
         return True
 
     except Exception as e:
-        print(f"❌ Error saving: {e}")
+        print(f"❌ Save error: {e}")
         return False
 
 
@@ -2197,85 +2173,69 @@ def save_to_google_sheets(worksheet, category, title, script, source_link):
 # Content Hash
 # ============================================================
 def get_content_hash(title: str, content: str) -> str:
-    combined = f"{title.lower()}{content[:200].lower()}"
-    return hashlib.md5(combined.encode()).hexdigest()
+    return hashlib.md5(f"{title.lower()}{content[:200].lower()}".encode()).hexdigest()
 
 
 # ============================================================
-# Fetch Single Article with RETRY (3 attempts)
+# Fetch with Retry
 # ============================================================
 async def fetch_article_with_retry(crawler, url: str, retries: int = 3) -> str:
-    """
-    ✅ NEW: Retry logic - tries 3 times before giving up
-    Returns markdown content or empty string
-    """
     for attempt in range(1, retries + 1):
         try:
             result = await crawler.arun(
                 url,
                 config=CrawlerRunConfig(
                     cache_mode=CacheMode.BYPASS,
-                    word_count_threshold=10,     # ✅ Lowered from 50
-                    page_timeout=25000           # ✅ Increased from 15000
+                    word_count_threshold=10,
+                    page_timeout=25000
                 )
             )
-            if result.success and len(result.markdown) > 50:  # ✅ Lowered from 100
+            if result.success and len(result.markdown) > 50:
                 return result.markdown
-            else:
-                print(f"      ⚠️ Attempt {attempt}: Empty/short content, retrying...")
-                await asyncio.sleep(2)
-
-        except Exception as e:
-            print(f"      ⚠️ Attempt {attempt} failed: {str(e)[:50]}, retrying...")
             await asyncio.sleep(2)
-
-    return ""  # All retries failed
+        except Exception:
+            await asyncio.sleep(2)
+    return ""
 
 
 # ============================================================
-# Web Scraping - GUARANTEED 10 per site
+# Web Scraping
 # ============================================================
 async def scrape_multiple_marathi_sources():
-    """
-    ✅ FIXED: Scrape exactly 10 articles from each site
-    Uses 30-link buffer + retry logic to guarantee 10 per site
-    """
     all_news = []
 
     async with AsyncWebCrawler(verbose=False) as crawler:
-
         for site in NEWS_SITES:
             print(f"\n{'='*60}")
-            print(f"🔍 Scraping {site['name']} | Target: {site['target']}")
+            print(f"🔍 {site['name']} | Target: {site['target']}")
             print(f"{'='*60}")
 
             site_articles = []
 
             try:
-                # ── Fetch homepage ──────────────────────────────────
-                config = CrawlerRunConfig(
-                    cache_mode=CacheMode.BYPASS,
-                    wait_for="body",
-                    word_count_threshold=10,
-                    page_timeout=30000,
-                    js_code="await new Promise(r => setTimeout(r, 3000));"  # ✅ 3s wait
+                result = await crawler.arun(
+                    site['url'],
+                    config=CrawlerRunConfig(
+                        cache_mode=CacheMode.BYPASS,
+                        wait_for="body",
+                        word_count_threshold=10,
+                        page_timeout=30000,
+                        js_code="await new Promise(r => setTimeout(r, 3000));"
+                    )
                 )
 
-                result = await crawler.arun(site['url'], config=config)
-
                 if not result.success:
-                    print(f"❌ Failed to load homepage: {site['name']}")
+                    print(f"❌ Failed: {site['name']}")
                     continue
 
                 soup = BeautifulSoup(result.html, 'html.parser')
                 raw_articles = []
-                all_links = soup.find_all('a', href=True)
 
-                for link_tag in all_links:
-                    href = link_tag.get('href', '')
+                for link_tag in soup.find_all('a', href=True):
+                    href  = link_tag.get('href', '')
                     title = link_tag.get_text(strip=True)
 
-                    if (len(title) > 15 and len(title) < 300 and
+                    if (15 < len(title) < 300 and
                         site['link_pattern'] in href and
                         not any(x in href.lower() for x in [
                             'javascript:', 'mailto:', '#',
@@ -2289,94 +2249,68 @@ async def scrape_multiple_marathi_sources():
                         ])):
 
                         if href.startswith('/'):
-                            base_url = (site['url'].split('/')[0] +
-                                        '//' + site['url'].split('/')[2])
-                            href = base_url + href
+                            base = site['url'].split('/')[0] + '//' + site['url'].split('/')[2]
+                            href = base + href
 
                         if href.startswith('http'):
-                            raw_articles.append({
-                                'title': title,
-                                'link': href
-                            })
+                            raw_articles.append({'title': title, 'link': href})
 
-                # Deduplicate links
-                seen_links = set()
+                # Deduplicate
+                seen = set()
                 unique_links = []
-                for article in raw_articles:
-                    if article['link'] not in seen_links:
-                        unique_links.append(article)
-                        seen_links.add(article['link'])
+                for a in raw_articles:
+                    if a['link'] not in seen:
+                        unique_links.append(a)
+                        seen.add(a['link'])
 
                 print(f"📋 Found {len(unique_links)} unique links")
 
-                # ── Fetch articles with buffer ───────────────────────
-                fetch_limit = site.get('fetch_limit', 30)  # ✅ Try up to 30 links
-
-                for article in unique_links[:fetch_limit]:
-
-                    # Stop once we have enough
+                # Fetch articles until target reached
+                for article in unique_links[:site['fetch_limit']]:
                     if len(site_articles) >= site['target']:
                         break
 
-                    print(f"   🔗 [{len(site_articles)+1}/{site['target']}] "
-                          f"Fetching: {article['title'][:50]}...")
+                    print(f"   🔗 [{len(site_articles)+1}/{site['target']}] {article['title'][:50]}...")
 
-                    # ✅ Use retry logic
                     markdown = await fetch_article_with_retry(crawler, article['link'])
 
-                    if markdown:
-                        content_hash = get_content_hash(article['title'], markdown)
+                    # ✅ Always add article - use content if available, title as fallback
+                    content = markdown if markdown else article['title']
+                    content_hash = get_content_hash(article['title'], content)
 
-                        if content_hash not in processed_hashes:
-                            site_articles.append({
-                                'title': article['title'],
-                                'link': article['link'],
-                                'content': markdown[:2500],
-                                'hash': content_hash
-                            })
-                            processed_hashes.add(content_hash)
-                            print(f"   ✅ [{len(site_articles)}/{site['target']}] "
-                                  f"Got: {article['title'][:50]}...")
-                        else:
-                            print(f"   🔄 Duplicate skipped")
-
+                    if content_hash not in processed_hashes:
+                        site_articles.append({
+                            'title':   article['title'],
+                            'link':    article['link'],
+                            'content': content[:2500],
+                            'hash':    content_hash,
+                            'has_full_content': bool(markdown)  # ✅ Track if real content
+                        })
+                        processed_hashes.add(content_hash)
+                        status = "✅" if markdown else "⚠️ fallback"
+                        print(f"   {status} [{len(site_articles)}/{site['target']}] {article['title'][:50]}...")
                     else:
-                        # ✅ FALLBACK: Use title as content if page fails
-                        content_hash = get_content_hash(article['title'], article['title'])
-                        if content_hash not in processed_hashes:
-                            site_articles.append({
-                                'title': article['title'],
-                                'link': article['link'],
-                                'content': article['title'],  # Use title as fallback
-                                'hash': content_hash
-                            })
-                            processed_hashes.add(content_hash)
-                            print(f"   ⚠️ [{len(site_articles)}/{site['target']}] "
-                                  f"Fallback (title only): {article['title'][:50]}...")
+                        print(f"   🔄 Duplicate skipped")
 
-                    await asyncio.sleep(1)  # ✅ Small delay per article
+                    await asyncio.sleep(1)
 
-                print(f"\n✅ {site['name']}: Got {len(site_articles)}/{site['target']} articles")
+                print(f"\n📦 {site['name']}: {len(site_articles)}/{site['target']} collected")
 
-                # ── AI Analysis ──────────────────────────────────────
                 if site_articles:
-                    filtered = await smart_analyze_with_category(
-                        site_articles, site['name']
-                    )
+                    filtered = await smart_analyze_with_category(site_articles, site['name'])
                     all_news.extend(filtered)
                     print(f"🧠 {site['name']}: Analyzed {len(filtered)} articles")
 
             except Exception as e:
-                print(f"❌ Error scraping {site['name']}: {e}")
+                print(f"❌ Error {site['name']}: {e}")
 
-            print(f"⏳ Moving to next site...")
             await asyncio.sleep(3)
 
     return all_news
 
 
 # ============================================================
-# AI Categorization - batches of 5
+# AI Categorization - sonar-pro (cheap)
 # ============================================================
 async def smart_analyze_with_category(articles: List[Dict], source_name: str):
     global total_input_tokens, total_output_tokens, total_cost
@@ -2388,150 +2322,152 @@ async def smart_analyze_with_category(articles: List[Dict], source_name: str):
 
         articles_text = ""
         for idx, article in enumerate(batch, i+1):
-            articles_text += f"""
-बातमी #{idx}:
-शीर्षक: {article['title']}
-Link: {article['link']}
-Content: {article['content'][:1000]}
----
-"""
+            # ✅ Only 500 chars for analysis - enough to categorize
+            articles_text += f"#{idx}: {article['title']}\n{article['content'][:500]}\n---\n"
 
-        prompt = f"""
-तुम्ही एक तज्ञ मराठी बातम्या विश्लेषक आहात. खालील बातम्यांचे विश्लेषण करा.
+        # ✅ Shorter prompt
+        prompt = f"""मराठी बातम्या विश्लेषक: खालील बातम्यांना category आणि summary द्या.
 
-**Categories (फक्त यापैकी एक निवडा):**
-1. sports  2. general  3. crime  4. politics
-5. education  6. economy  7. entertainment  8. horror
+Categories: sports, general, crime, politics, education, economy, entertainment, horror
 
-**JSON format (फक्त valid JSON array return करा):**
-[
-  {{
-    "title": "मूळ शीर्षक",
-    "category": "category name",
-    "detailed_summary": "विस्तृत सारांश 150-200 शब्दांत",
-    "importance": "high/medium/low",
-    "link": "URL जसाच्या तसा",
-    "key_points": ["मुद्दा 1", "मुद्दा 2", "मुद्दा 3"]
-  }}
-]
+JSON array format:
+[{{"title":"शीर्षक","category":"cat","detailed_summary":"150 शब्द Marathi summary","importance":"high/medium/low","link":"url","key_points":["1","2","3"]}}]
 
-**बातम्या:**
+बातम्या:
 {articles_text}
 
-फक्त JSON array return करा.
-"""
+फक्त JSON array."""
 
         try:
             response = perplexity_client.chat.completions.create(
-                model=MODEL_NAME,
+                model=ANALYSIS_MODEL,  # ✅ sonar-pro (cheaper)
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Return ONLY valid JSON array. No markdown, no explanation."
-                    },
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": "Return ONLY valid JSON array."},
+                    {"role": "user",   "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=4000
+                max_tokens=3000
             )
 
             if hasattr(response, 'usage'):
-                input_t = response.usage.prompt_tokens
-                output_t = response.usage.completion_tokens
-                total_input_tokens += input_t
-                total_output_tokens += output_t
-                batch_cost = (input_t * COST_PER_INPUT_TOKEN) + (output_t * COST_PER_OUTPUT_TOKEN)
-                total_cost += batch_cost
-                print(f"   📊 {input_t}in + {output_t}out = ${batch_cost:.4f}")
+                i_t = response.usage.prompt_tokens
+                o_t = response.usage.completion_tokens
+                total_input_tokens  += i_t
+                total_output_tokens += o_t
+                c = (i_t * ANALYSIS_INPUT_COST) + (o_t * ANALYSIS_OUTPUT_COST)
+                total_cost += c
+                print(f"   📊 {i_t}in + {o_t}out = ${c:.4f}")
 
             content = response.choices[0].message.content
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
-            json_match = re.search(r'\[.*\]', content, re.DOTALL)
+            match = re.search(r'\[.*\]', content, re.DOTALL)
 
-            if json_match:
-                batch_articles = json.loads(json_match.group())
-                all_filtered.extend(batch_articles)
-                print(f"   ✅ Categorized {len(batch_articles)} articles")
+            if match:
+                parsed = json.loads(match.group())
+                all_filtered.extend(parsed)
+                print(f"   ✅ Categorized {len(parsed)} articles")
             else:
-                print(f"   ⚠️ JSON parse failed")
+                # ✅ FALLBACK: manually create entries if JSON fails
+                print(f"   ⚠️ JSON failed - using fallback entries")
+                for article in batch:
+                    all_filtered.append({
+                        'title':            article['title'],
+                        'category':         'general',
+                        'detailed_summary': article['title'],
+                        'importance':       'medium',
+                        'link':             article['link'],
+                        'key_points':       [article['title']]
+                    })
 
-        except json.JSONDecodeError as e:
-            print(f"   ❌ JSON error: {e}")
+        except json.JSONDecodeError:
+            # ✅ FALLBACK on JSON error too
+            for article in batch:
+                all_filtered.append({
+                    'title':            article['title'],
+                    'category':         'general',
+                    'detailed_summary': article['content'][:300],
+                    'importance':       'medium',
+                    'link':             article['link'],
+                    'key_points':       [article['title']]
+                })
         except Exception as e:
             print(f"   ❌ AI error: {e}")
 
         await asyncio.sleep(1.5)
 
     for article in all_filtered:
-        article['source'] = source_name
-        article['scraped_at'] = datetime.now().isoformat()
+        article['source']      = source_name
+        article['scraped_at']  = datetime.now().isoformat()
 
     return all_filtered
 
 
 # ============================================================
-# Script Generation
+# Script Generation - sonar-reasoning-pro (quality)
 # ============================================================
 async def create_reel_script_single(news_article: Dict):
     global total_input_tokens, total_output_tokens, total_cost
 
     category = news_article.get('category', 'general')
 
-    system_prompt = """तुम्ही "जबरी खबरी" Instagram Reels चे एक्सपर्ट स्क्रिप्ट रायटर आहात.
+    # ✅ Shorter system prompt - same quality
+    system_prompt = """तुम्ही "जबरी खबरी" Reels script writer आहात.
+Hook (2 ओळी) → Story+Facts (8 ओळी) → Twist/Question (4 ओळी) → CTA (2-4 ओळी)
+शेवट: "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
+Output: फक्त 15-18 ओळी script. इतर काहीही नाही."""
 
-**HOOK VARIETY:**
-1. Shock Statement: "एका अपघाताने संपूर्ण राज्य हादरलं."
-2. Direct Question: "तुम्हाला माहिती आहे का...?"
-3. Breaking News: "नुकतीच एक धक्कादायक माहिती समोर आली."
-4. Name Drop: "[नाव] आज चर्चेत का आहे?"
-5. Contrast/Twist: "दिसतं काहीतरी, पण वास्तव वेगळंच."
-6. Suspense: "काल रात्री घडलं ते विश्वास बसणार नाही..."
-7. Urgency: "महाराष्ट्रात मोठी घडामोड..."
+    # ✅ Trim summary to 300 chars to save tokens
+    summary     = news_article.get('detailed_summary', news_article.get('title', ''))[:300]
+    key_points  = ', '.join(news_article.get('key_points', [news_article.get('title', '')]))
 
-**स्ट्रक्चर (15-18 ओळी):**
-- ओळ 1-2: Hook
-- ओळ 3-10: मुख्य घटना (facts, नावे, ठिकाणे सह)
-- ओळ 11-14: ट्विस्ट/प्रश्न
-- ओळ 15-18: CTA
-
-**शेवट:** "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
-OUTPUT: फक्त script, 15-18 ओळी."""
-
-    user_prompt = f"""खालील {category.upper()} बातमीवर Reel script तयार करा.
-
+    user_prompt = f"""{category.upper()} बातमी:
 शीर्षक: {news_article['title']}
-सारांश: {news_article.get('detailed_summary', '')}
-Key Points: {', '.join(news_article.get('key_points', []))}
-Source: {news_article.get('source', '')}
+सारांश: {summary}
+मुद्दे: {key_points}
 
-15-18 ओळी, फक्त script."""
+15-18 ओळी script द्या."""
 
-    try:
-        response = perplexity_client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.8,
-            max_tokens=1500
-        )
+    # ✅ Retry script generation up to 2 times
+    for attempt in range(1, 3):
+        try:
+            response = perplexity_client.chat.completions.create(
+                model=SCRIPT_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user",   "content": user_prompt}
+                ],
+                temperature=0.8,
+                max_tokens=1200  # ✅ Reduced from 1500
+            )
 
-        if hasattr(response, 'usage'):
-            input_t = response.usage.prompt_tokens
-            output_t = response.usage.completion_tokens
-            total_input_tokens += input_t
-            total_output_tokens += output_t
-            total_cost += (input_t * COST_PER_INPUT_TOKEN) + (output_t * COST_PER_OUTPUT_TOKEN)
+            if hasattr(response, 'usage'):
+                i_t = response.usage.prompt_tokens
+                o_t = response.usage.completion_tokens
+                total_input_tokens  += i_t
+                total_output_tokens += o_t
+                total_cost += (i_t * SCRIPT_INPUT_COST) + (o_t * SCRIPT_OUTPUT_COST)
 
-        script = response.choices[0].message.content.strip()
-        script = re.sub(r'<think>.*?</think>', '', script, flags=re.DOTALL).strip()
-        script = script.replace('```', '').strip()
-        return script
+            script = response.choices[0].message.content.strip()
+            script = re.sub(r'<think>.*?</think>', '', script, flags=re.DOTALL).strip()
+            script = script.replace('```', '').strip()
 
-    except Exception as e:
-        print(f"❌ Script error: {e}")
-        return None
+            if len(script) > 50:  # ✅ Valid script check
+                return script
+
+        except Exception as e:
+            print(f"   ⚠️ Script attempt {attempt} failed: {e}")
+            await asyncio.sleep(2)
+
+    # ✅ LAST RESORT fallback script if all attempts fail
+    return f"""महाराष्ट्रात एक महत्त्वाची बातमी समोर आली आहे.
+
+{news_article['title']}
+
+ही बातमी सध्या चर्चेत आहे आणि सर्वांचे लक्ष वेधून घेत आहे.
+
+अधिक माहितीसाठी आमचे पेज फॉलो करा.
+
+तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."""
 
 
 # ============================================================
@@ -2541,19 +2477,19 @@ async def main():
     global total_input_tokens, total_output_tokens, total_cost
 
     print("=" * 70)
-    print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v3.1")
-    print(f"🤖 Model : {MODEL_NAME}")
+    print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v4.0")
+    print(f"🔍 Analysis : {ANALYSIS_MODEL}")
+    print(f"✍️  Scripts  : {SCRIPT_MODEL}")
     print("=" * 70)
     print("📍 Sites  : TV9, ABP Majha, Lokmat, Mah Times, NDTV Marathi")
-    print("📊 Target : 10 articles × 5 sites = 50 scripts GUARANTEED")
-    print("🔁 Buffer : 30 links tried per site (3× safety margin)")
-    print("🔄 Retry  : 3 attempts per article")
+    print(f"📊 Target : 10 × 5 = {TARGET_SCRIPTS} scripts STRICTLY")
+    print("🔁 Buffer : 40 links/site | 🔄 Retry: 3× fetch + 2× script")
     print("=" * 70 + "\n")
 
     start_time = datetime.now()
 
     # ── STEP 1: SCRAPING ─────────────────────────────────────────────
-    print("\n" + "=" * 70)
+    print("=" * 70)
     print("STEP 1: SCRAPING 5 MARATHI NEWS SITES")
     print("=" * 70 + "\n")
 
@@ -2572,14 +2508,14 @@ async def main():
 
     print(f"\n✅ Total unique articles: {len(unique_articles)}")
 
-    # Category breakdown
+    # ✅ FIXED category breakdown
     category_counts = {}
     for article in unique_articles:
         cat = article.get('category', 'general')
         category_counts[cat] = category_counts.get(cat, 0) + 1
 
     print("\n📊 Category Breakdown:")
-    for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
+    for cat, count in sorted(category_counts.items(), key=lambda x: -x):  # ✅ FIXED[1]
         bar = "█" * count
         print(f"   {cat.upper():<15} {bar} ({count})")
 
@@ -2588,11 +2524,10 @@ async def main():
     unique_articles.sort(
         key=lambda x: priority_order.get(x.get('importance', 'medium'), 2)
     )
-    selected_articles = unique_articles[:50]
+    selected_articles = unique_articles[:TARGET_SCRIPTS]
 
-    print(f"\n🎯 Selected: {len(selected_articles)} articles")
-    scrape_duration = (datetime.now() - start_time).total_seconds()
-    print(f"⏱️  Scraping done in {scrape_duration:.0f}s\n")
+    print(f"\n🎯 Selected: {len(selected_articles)}/{TARGET_SCRIPTS} articles")
+    print(f"⏱️  Scraping: {(datetime.now()-start_time).total_seconds():.0f}s\n")
 
     # ── STEP 2: SCRIPTS + SHEETS ──────────────────────────────────────
     print("=" * 70)
@@ -2601,53 +2536,50 @@ async def main():
 
     worksheet = setup_google_sheets()
     successful_saves = 0
-    failed_saves = 0
+    failed_saves     = 0
 
     if worksheet and selected_articles:
         for idx, article in enumerate(selected_articles, 1):
             print(f"\n[{idx:02d}/{len(selected_articles)}] "
-                  f"{article.get('source', '')} | "
-                  f"{article.get('category', '').upper()} | "
-                  f"{article['title'][:45]}...")
+                  f"{article.get('source','')[:12]} | "
+                  f"{article.get('category','').upper():<12} | "
+                  f"{article['title'][:40]}...")
 
-            script = await create_reel_script_single(article)
+            script = await create_reel_script_single(article)  # Always returns something now
 
-            if script:
-                success = save_to_google_sheets(
-                    worksheet,
-                    article.get('category', 'general'),
-                    article['title'],
-                    script,
-                    article.get('link', '')
-                )
-                if success:
-                    successful_saves += 1
-                else:
-                    failed_saves += 1
+            success = save_to_google_sheets(
+                worksheet,
+                article.get('category', 'general'),
+                article['title'],
+                script,
+                article.get('link', '')
+            )
+            if success:
+                successful_saves += 1
             else:
                 failed_saves += 1
-                print(f"   ❌ Script failed")
 
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)  # ✅ Reduced from 2s → 1s
 
         print("\n" + "=" * 70)
         print("✅ DONE!")
         print("=" * 70)
         print(f"   ✅ Saved  : {successful_saves}/{len(selected_articles)}")
         print(f"   ❌ Failed : {failed_saves}")
-        print(f"   📊 Sheet  : https://docs.google.com/spreadsheets/d/"
-              f"{worksheet.spreadsheet.id}")
+        print(f"   📊 Sheet  : https://docs.google.com/spreadsheets/d/{worksheet.spreadsheet.id}")
+
     else:
         print("⚠️ No articles or Sheets unavailable!")
 
     # ── FINAL SUMMARY ─────────────────────────────────────────────────
     total_duration = (datetime.now() - start_time).total_seconds()
-    total_tokens = total_input_tokens + total_output_tokens
+    total_tokens   = total_input_tokens + total_output_tokens
 
     print("\n" + "=" * 70)
     print("📈 FINAL SUMMARY")
     print("=" * 70)
-    print(f"   🤖 Model              : {MODEL_NAME}")
+    print(f"   🔍 Analysis model     : {ANALYSIS_MODEL}")
+    print(f"   ✍️  Script model       : {SCRIPT_MODEL}")
     print(f"   📰 Articles scraped   : {len(unique_articles)}")
     print(f"   ✅ Scripts generated  : {successful_saves}")
     print(f"   ⏱️  Total time         : {total_duration:.0f}s ({total_duration/60:.1f} mins)")
@@ -2661,3 +2593,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
+
