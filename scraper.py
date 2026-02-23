@@ -2602,7 +2602,767 @@
 
 
 
+# -----------------------------links mistmatch code below but working very fine ---------------------
 
+
+# import asyncio
+# import json
+# from datetime import datetime
+# from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, CacheMode
+# from bs4 import BeautifulSoup
+# from openai import OpenAI
+# import re
+# import gspread
+# from google.oauth2.service_account import Credentials
+# import os
+# from typing import List, Dict
+# import hashlib
+
+
+# # ============================================================
+# # Perplexity Client
+# # ============================================================
+# perplexity_client = OpenAI(
+#     api_key=os.environ.get("PERPLEXITY_API_KEY"),
+#     base_url="https://api.perplexity.ai"
+# )
+
+# ANALYSIS_MODEL       = "sonar-pro"            # Cheap: categorization
+# SCRIPT_MODEL         = "sonar-reasoning-pro"  # Quality: script writing
+
+# ANALYSIS_INPUT_COST  = 1.0 / 1_000_000
+# ANALYSIS_OUTPUT_COST = 1.0 / 1_000_000
+# SCRIPT_INPUT_COST    = 2.0 / 1_000_000
+# SCRIPT_OUTPUT_COST   = 8.0 / 1_000_000
+
+
+# # ============================================================
+# # Config
+# # ============================================================
+# GOOGLE_SHEETS_CREDENTIALS_FILE = "credentials.json"
+# GOOGLE_SHEET_NAME               = "Instagram Scripts"
+# GOOGLE_WORKSHEET_NAME           = "Scripts"
+# TARGET_SCRIPTS                  = 50
+
+# VALID_CATEGORIES = [
+#     "sports", "general", "crime", "politics",
+#     "education", "economy", "entertainment", "horror"
+# ]
+
+# # Refusal detection keywords
+# REFUSAL_KEYWORDS = [
+#     "I appreciate", "I should clarify", "I'm Perplexity",
+#     "search assistant", "I'm not able", "I cannot create",
+#     "Would you like", "clarify my role", "I'm an AI",
+#     "as an AI", "I don't create"
+# ]
+
+
+# # ============================================================
+# # Token Tracking
+# # ============================================================
+# total_input_tokens  = 0
+# total_output_tokens = 0
+# total_cost          = 0.0
+# processed_hashes    = set()
+
+
+# # ============================================================
+# # News Sites - 10 articles × 5 sites = 50
+# # ============================================================
+# NEWS_SITES = [
+#     {
+#         "name": "TV9 Marathi",
+#         "url": "https://www.tv9marathi.com/latest-news",
+#         "link_pattern": "tv9marathi.com",
+#         "target": 10,
+#         "fetch_limit": 40
+#     },
+#     {
+#         "name": "ABP Majha",
+#         "url": "https://marathi.abplive.com/news",
+#         "link_pattern": "abplive.com",
+#         "target": 10,
+#         "fetch_limit": 40
+#     },
+#     {
+#         "name": "Lokmat",
+#         "url": "https://www.lokmat.com/latestnews/",
+#         "link_pattern": "lokmat.com",
+#         "target": 10,
+#         "fetch_limit": 40
+#     },
+#     {
+#         "name": "Maharashtra Times",
+#         "url": "https://maharashtratimes.com/",
+#         "link_pattern": "maharashtratimes.com",
+#         "target": 10,
+#         "fetch_limit": 40
+#     },
+#     {
+#         "name": "NDTV Marathi",
+#         "url": "https://marathi.ndtv.com/",
+#         "link_pattern": "marathi.ndtv.com",
+#         "target": 10,
+#         "fetch_limit": 40
+#     }
+# ]
+
+
+# # ============================================================
+# # Google Sheets Setup
+# # ============================================================
+# def setup_google_sheets():
+#     try:
+#         scope = [
+#             'https://spreadsheets.google.com/feeds',
+#             'https://www.googleapis.com/auth/drive'
+#         ]
+#         creds = Credentials.from_service_account_file(
+#             GOOGLE_SHEETS_CREDENTIALS_FILE, scopes=scope
+#         )
+#         client = gspread.authorize(creds)
+
+#         try:
+#             sheet = client.open(GOOGLE_SHEET_NAME)
+#             print(f"✅ Connected: '{GOOGLE_SHEET_NAME}'")
+#         except gspread.SpreadsheetNotFound:
+#             sheet = client.create(GOOGLE_SHEET_NAME)
+#             print(f"✅ Created: '{GOOGLE_SHEET_NAME}'")
+
+#         try:
+#             worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
+#             print(f"✅ Worksheet: '{GOOGLE_WORKSHEET_NAME}'")
+#         except gspread.WorksheetNotFound:
+#             worksheet = sheet.add_worksheet(
+#                 title=GOOGLE_WORKSHEET_NAME, rows=5000, cols=10
+#             )
+#             worksheet.update('A1:E1', [[
+#                 'Timestamp', 'Category', 'Title', 'Script', 'Source Link'
+#             ]])
+#             worksheet.format('A1:E1', {
+#                 'textFormat': {
+#                     'bold': True,
+#                     'foregroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0}
+#                 },
+#                 'backgroundColor': {'red': 0.2, 'green': 0.6, 'blue': 0.9},
+#                 'horizontalAlignment': 'CENTER'
+#             })
+#             worksheet.set_column_width('A', 180)
+#             worksheet.set_column_width('B', 150)
+#             worksheet.set_column_width('C', 400)
+#             worksheet.set_column_width('D', 600)
+#             worksheet.set_column_width('E', 400)
+#             print(f"✅ Created worksheet with headers")
+
+#         return worksheet
+
+#     except FileNotFoundError:
+#         print(f"❌ credentials.json not found!")
+#         return None
+#     except Exception as e:
+#         print(f"❌ Sheets setup error: {e}")
+#         import traceback
+#         traceback.print_exc()
+#         return None
+
+
+# # ============================================================
+# # Save to Google Sheets
+# # ============================================================
+# def save_to_google_sheets(worksheet, category, title, script, source_link):
+#     try:
+#         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+#         script = '\n'.join(str(i) for i in script) if isinstance(script, list) else str(script).strip()
+#         script = script.replace('[', '').replace(']', '')
+#         title = str(title).strip()
+#         source_link = str(source_link).strip()
+#         category = str(category).strip().lower()
+
+#         if category not in VALID_CATEGORIES:
+#             category = "general"
+
+#         next_row = len(worksheet.get_all_values()) + 1
+#         worksheet.append_row(
+#             [timestamp, category, title, script, source_link],
+#             value_input_option='RAW'
+#         )
+
+#         worksheet.format(f'A{next_row}:E{next_row}', {
+#             'textFormat': {
+#                 'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
+#                 'fontSize': 10
+#             },
+#             'backgroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0},
+#             'wrapStrategy': 'WRAP',
+#             'verticalAlignment': 'TOP'
+#         })
+
+#         category_colors = {
+#             'crime':         {'red': 0.95, 'green': 0.8,  'blue': 0.8},
+#             'politics':      {'red': 0.8,  'green': 0.9,  'blue': 1.0},
+#             'sports':        {'red': 0.8,  'green': 1.0,  'blue': 0.8},
+#             'entertainment': {'red': 1.0,  'green': 0.9,  'blue': 0.8},
+#             'education':     {'red': 0.9,  'green': 0.95, 'blue': 1.0},
+#             'economy':       {'red': 0.95, 'green': 1.0,  'blue': 0.85},
+#             'horror':        {'red': 0.7,  'green': 0.7,  'blue': 0.7},
+#             'general':       {'red': 1.0,  'green': 1.0,  'blue': 0.9}
+#         }
+#         worksheet.format(f'B{next_row}', {
+#             'textFormat': {
+#                 'bold': True,
+#                 'foregroundColor': {'red': 0.0, 'green': 0.0, 'blue': 0.0},
+#                 'fontSize': 10
+#             },
+#             'backgroundColor': category_colors.get(category, category_colors['general']),
+#             'horizontalAlignment': 'CENTER'
+#         })
+
+#         print(f"✅ Saved [{category.upper()}] {title[:50]}...")
+#         return True
+
+#     except Exception as e:
+#         print(f"❌ Save error: {e}")
+#         return False
+
+
+# # ============================================================
+# # Content Hash
+# # ============================================================
+# def get_content_hash(title: str, content: str) -> str:
+#     return hashlib.md5(
+#         f"{title.lower()}{content[:200].lower()}".encode()
+#     ).hexdigest()
+
+
+# # ============================================================
+# # Sort helper - FIX for lambda crash
+# # ============================================================
+# def sort_by_count(item):
+#     return -item[1]
+
+
+# def sort_by_priority(item):
+#     priority_order = {'high': 1, 'medium': 2, 'low': 3}
+#     return priority_order.get(item.get('importance', 'medium'), 2)
+
+
+# # ============================================================
+# # Marathi Validator
+# # ============================================================
+# def is_valid_marathi_script(script: str) -> bool:
+#     if len(script) < 100:
+#         return False
+#     if any(kw.lower() in script.lower() for kw in REFUSAL_KEYWORDS):
+#         return False
+#     devanagari = len(re.findall(r'[\u0900-\u097F]', script))
+#     total      = len(script.replace(' ', '').replace('\n', ''))
+#     return (devanagari / max(total, 1)) > 0.35
+
+
+# # ============================================================
+# # Fetch Article with Retry
+# # ============================================================
+# async def fetch_article_with_retry(crawler, url: str, retries: int = 3) -> str:
+#     for attempt in range(1, retries + 1):
+#         try:
+#             result = await crawler.arun(
+#                 url,
+#                 config=CrawlerRunConfig(
+#                     cache_mode=CacheMode.BYPASS,
+#                     word_count_threshold=10,
+#                     page_timeout=25000
+#                 )
+#             )
+#             if result.success and len(result.markdown) > 50:
+#                 return result.markdown
+#             await asyncio.sleep(2)
+#         except Exception:
+#             await asyncio.sleep(2)
+#     return ""
+
+
+# # ============================================================
+# # Scraping - 10 per site guaranteed
+# # ============================================================
+# async def scrape_multiple_marathi_sources():
+#     all_news = []
+
+#     async with AsyncWebCrawler(verbose=False) as crawler:
+#         for site in NEWS_SITES:
+#             print(f"\n{'='*60}")
+#             print(f"🔍 {site['name']} | Target: {site['target']}")
+#             print(f"{'='*60}")
+
+#             site_articles = []
+
+#             try:
+#                 result = await crawler.arun(
+#                     site['url'],
+#                     config=CrawlerRunConfig(
+#                         cache_mode=CacheMode.BYPASS,
+#                         wait_for="body",
+#                         word_count_threshold=10,
+#                         page_timeout=30000,
+#                         js_code="await new Promise(r => setTimeout(r, 3000));"
+#                     )
+#                 )
+
+#                 if not result.success:
+#                     print(f"❌ Failed: {site['name']}")
+#                     continue
+
+#                 soup = BeautifulSoup(result.html, 'html.parser')
+#                 raw_articles = []
+
+#                 for link_tag in soup.find_all('a', href=True):
+#                     href  = link_tag.get('href', '')
+#                     title = link_tag.get_text(strip=True)
+
+#                     if (15 < len(title) < 300 and
+#                         site['link_pattern'] in href and
+#                         not any(x in href.lower() for x in [
+#                             'javascript:', 'mailto:', '#',
+#                             '/category/', '/tag/', '/author/',
+#                             'facebook.com', 'twitter.com', 'instagram.com',
+#                             'youtube.com', 'whatsapp.com', '/myaccount/',
+#                             '/install_app', '/advertisement', '/epaper',
+#                             'web-stories', 'photo-gallery', '/videos/',
+#                             '/games/', '/jokes/', '/terms-and-conditions',
+#                             '/topic/', '/widget/', '/livetv',
+#                             'articlelist', '/live'
+#                         ])):
+
+#                         if href.startswith('/'):
+#                             base = (site['url'].split('/')[0] + '//'
+#                                     + site['url'].split('/')[2])
+#                             href = base + href
+
+#                         if href.startswith('http'):
+#                             raw_articles.append({'title': title, 'link': href})
+
+#                 # Deduplicate
+#                 seen = set()
+#                 unique_links = []
+#                 for a in raw_articles:
+#                     if a['link'] not in seen:
+#                         unique_links.append(a)
+#                         seen.add(a['link'])
+
+#                 print(f"📋 Found {len(unique_links)} unique links")
+
+#                 for article in unique_links[:site['fetch_limit']]:
+#                     if len(site_articles) >= site['target']:
+#                         break
+
+#                     print(f"   🔗 [{len(site_articles)+1}/{site['target']}] "
+#                         f"{article['title'][:50]}...")
+
+#                     markdown = await fetch_article_with_retry(crawler, article['link'])
+#                     content  = markdown if markdown else article['title']
+#                     content_hash = get_content_hash(article['title'], content)
+
+#                     if content_hash not in processed_hashes:
+#                         site_articles.append({
+#                             'title':            article['title'],
+#                             'link':             article['link'],  # ✅ Always original URL
+#                             'content':          content[:2500],
+#                             'hash':             content_hash,
+#                             'has_full_content': bool(markdown)
+#                         })
+#                         processed_hashes.add(content_hash)
+#                         tag = "✅" if markdown else "⚠️ fallback"
+#                         print(f"   {tag} [{len(site_articles)}/{site['target']}] "
+#                             f"{article['title'][:50]}...")
+#                     else:
+#                         print(f"   🔄 Duplicate skipped")
+
+#                     await asyncio.sleep(1)
+
+#                 print(f"\n📦 {site['name']}: {len(site_articles)}/{site['target']} collected")
+
+#                 if site_articles:
+#                     filtered = await smart_analyze_with_category(
+#                         site_articles, site['name']
+#                     )
+#                     all_news.extend(filtered)
+#                     print(f"🧠 {site['name']}: Analyzed {len(filtered)} articles")
+
+#             except Exception as e:
+#                 print(f"❌ Error {site['name']}: {e}")
+
+#             await asyncio.sleep(3)
+
+#     return all_news
+
+
+# # ============================================================
+# # AI Categorization - sonar-pro + link preservation
+# # ============================================================
+# async def smart_analyze_with_category(articles: List[Dict], source_name: str):
+#     global total_input_tokens, total_output_tokens, total_cost
+
+#     all_filtered = []
+
+#     # ✅ FIX: Store original links BEFORE sending to AI
+#     original_links = {article['title']: article['link'] for article in articles}
+
+#     for i in range(0, len(articles), 5):
+#         batch = articles[i:i+5]
+
+#         articles_text = ""
+#         for idx, article in enumerate(batch, i+1):
+#             # ✅ 500 chars is enough to categorize (saves tokens)
+#             articles_text += f"#{idx}: {article['title']}\n{article['content'][:500]}\n---\n"
+
+#         # ✅ No link field in JSON - prevents AI from overwriting real URLs
+#         prompt = f"""मराठी बातम्या विश्लेषक: खालील बातम्यांना category आणि Marathi summary द्या.
+
+# ⚠️ नियम: detailed_summary आणि key_points फक्त मराठीत लिहा.
+
+# Categories: sports, general, crime, politics, education, economy, entertainment, horror
+
+# JSON array (link field नको):
+# [{{"title":"EXACT शीर्षक","category":"cat","detailed_summary":"१५०-२०० शब्द मराठी सारांश - कोण, काय, कुठे, केव्हा सह","importance":"high/medium/low","key_points":["मराठी मुद्दा १","मराठी मुद्दा २","मराठी मुद्दा ३"]}}]
+
+# बातम्या:
+# {articles_text}
+
+# फक्त JSON array. Link field नको."""
+
+#         try:
+#             response = perplexity_client.chat.completions.create(
+#                 model=ANALYSIS_MODEL,
+#                 messages=[
+#                     {
+#                         "role": "system",
+#                         "content": "Return ONLY valid JSON array. No link field. Summaries in Marathi only."
+#                     },
+#                     {"role": "user", "content": prompt}
+#                 ],
+#                 temperature=0.2,
+#                 max_tokens=3000
+#             )
+
+#             if hasattr(response, 'usage'):
+#                 i_t = response.usage.prompt_tokens
+#                 o_t = response.usage.completion_tokens
+#                 total_input_tokens  += i_t
+#                 total_output_tokens += o_t
+#                 c = (i_t * ANALYSIS_INPUT_COST) + (o_t * ANALYSIS_OUTPUT_COST)
+#                 total_cost += c
+#                 print(f"   📊 {i_t}in + {o_t}out = ${c:.4f}")
+
+#             content = response.choices[0].message.content
+#             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+#             match = re.search(r'\[.*\]', content, re.DOTALL)
+
+#             if match:
+#                 parsed = json.loads(match.group())
+
+#                 # ✅ FIX: Restore original scraped links - never trust AI for URLs
+#                 for art in parsed:
+#                     ai_title = art.get('title', '')
+
+#                     # Exact match first
+#                     if ai_title in original_links:
+#                         art['link'] = original_links[ai_title]
+#                     else:
+#                         # Fuzzy match by longest common substring
+#                         best_link  = ''
+#                         best_score = 0
+#                         for orig_title, orig_link in original_links.items():
+#                             score = sum(
+#                                 1 for a, b in zip(ai_title[:40], orig_title[:40])
+#                                 if a == b
+#                             )
+#                             if score > best_score:
+#                                 best_score = score
+#                                 best_link  = orig_link
+#                         art['link'] = best_link
+
+#                 all_filtered.extend(parsed)
+#                 print(f"   ✅ Categorized {len(parsed)} articles with original links")
+
+#             else:
+#                 print(f"   ⚠️ JSON failed - using fallback entries")
+#                 for article in batch:
+#                     all_filtered.append({
+#                         'title':            article['title'],
+#                         'category':         'general',
+#                         'detailed_summary': article['content'][:300],
+#                         'importance':       'medium',
+#                         'link':             article['link'],  # ✅ Always original
+#                         'key_points':       [article['title']]
+#                     })
+
+#         except json.JSONDecodeError:
+#             for article in batch:
+#                 all_filtered.append({
+#                     'title':            article['title'],
+#                     'category':         'general',
+#                     'detailed_summary': article['content'][:300],
+#                     'importance':       'medium',
+#                     'link':             article['link'],  # ✅ Always original
+#                     'key_points':       [article['title']]
+#                 })
+#         except Exception as e:
+#             print(f"   ❌ AI error: {e}")
+
+#         await asyncio.sleep(1.5)
+
+#     for art in all_filtered:
+#         art['source']     = source_name
+#         art['scraped_at'] = datetime.now().isoformat()
+
+#     return all_filtered
+
+
+# # ============================================================
+# # Script Generation - sonar-reasoning-pro + anti-refusal
+# # ============================================================
+# async def create_reel_script_single(news_article: Dict):
+#     global total_input_tokens, total_output_tokens, total_cost
+
+#     category = news_article.get('category', 'general')
+
+#     # ✅ FIX: Framed as formatting task - prevents identity refusal
+#     system_prompt = """तुम्ही एक मराठी text formatter आहात.
+# बातमीचे facts वापरून structured मराठी lines तयार करा.
+
+# Structure (15-18 lines total):
+# - Line 1-2: धक्कादायक hook (घटनेची सुरुवात)
+# - Line 3-10: सर्व facts (नावे, ठिकाण, तारीख, संख्या सह)
+# - Line 11-14: प्रश्न / विश्लेषण / ट्विस्ट
+# - Line 15-18: CTA - शेवटची line नक्की हीच असावी:
+#   "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
+
+# नियम:
+# - संपूर्ण output फक्त मराठीत (proper nouns सोडून)
+# - 15-18 lines, प्रत्येक line 1-2 sentences
+# - कोणतेही heading, explanation, markdown नाही
+# - फक्त script lines output करा"""
+
+#     summary    = news_article.get('detailed_summary', news_article.get('title', ''))[:300]
+#     key_points = ', '.join(news_article.get('key_points', [news_article.get('title', '')]))
+
+#     # Standard prompt
+#     user_prompt_v1 = f"""Category: {category.upper()}
+# शीर्षक: {news_article['title']}
+# सारांश: {summary}
+# मुद्दे: {key_points}
+
+# वरील बातमीचे facts वापरून 15-18 मराठी lines तयार करा."""
+
+#     # Stronger fallback prompt (used on refusal)
+#     user_prompt_v2 = f"""खालील बातमीच्या facts वापरून 15 मराठी वाक्ये लिहा.
+# बातमी: {news_article['title']}. {summary[:200]}
+# प्रत्येक वाक्य नवीन line वर लिहा.
+# शेवटची line: "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी." """
+
+#     prompts = [user_prompt_v1, user_prompt_v2]
+
+#     for attempt in range(1, 3):
+#         try:
+#             response = perplexity_client.chat.completions.create(
+#                 model=SCRIPT_MODEL,
+#                 messages=[
+#                     {"role": "system", "content": system_prompt},
+#                     {"role": "user",   "content": prompts[attempt - 1]}
+#                 ],
+#                 temperature=0.8,
+#                 max_tokens=1200
+#             )
+
+#             if hasattr(response, 'usage'):
+#                 i_t = response.usage.prompt_tokens
+#                 o_t = response.usage.completion_tokens
+#                 total_input_tokens  += i_t
+#                 total_output_tokens += o_t
+#                 total_cost += (i_t * SCRIPT_INPUT_COST) + (o_t * SCRIPT_OUTPUT_COST)
+
+#             script = response.choices[0].message.content.strip()
+#             script = re.sub(r'<think>.*?</think>', '', script, flags=re.DOTALL).strip()
+#             script = script.replace('```', '').strip()
+
+#             if is_valid_marathi_script(script):
+#                 return script
+
+#             # Check reason for failure
+#             is_refusal = any(kw.lower() in script.lower() for kw in REFUSAL_KEYWORDS)
+#             if is_refusal:
+#                 print(f"   ⚠️ Attempt {attempt}: Model refused - retrying...")
+#             else:
+#                 print(f"   ⚠️ Attempt {attempt}: Not valid Marathi - retrying...")
+
+#         except Exception as e:
+#             print(f"   ⚠️ Attempt {attempt} error: {e}")
+#             await asyncio.sleep(2)
+
+#     # ✅ 100% Marathi hardcoded fallback - always valid
+#     title = news_article.get('title', 'एक महत्त्वाची बातमी')[:80]
+#     return f"""महाराष्ट्रात एक महत्त्वाची घडामोड समोर आली आहे.
+
+# {title}
+
+# ही बातमी सध्या सर्वत्र चर्चेत आहे.
+
+# या घटनेने अनेकांना आश्चर्यचकित केले आहे.
+
+# सर्वसामान्य नागरिकांवर याचा थेट परिणाम होणार आहे.
+
+# प्रशासनाने याबाबत अद्याप अधिकृत प्रतिक्रिया दिलेली नाही.
+
+# विरोधकांनी या निर्णयावर जोरदार टीका केली आहे.
+
+# येत्या काही दिवसांत यावर मोठा निर्णय होण्याची शक्यता आहे.
+
+# तुम्हाला या बातमीबद्दल काय वाटते?
+
+# या प्रकरणाकडे सर्वांचे लक्ष लागले आहे.
+
+# अशा महत्त्वाच्या बातम्यांसाठी आमचे पेज फॉलो करा.
+
+# जबरी खबरी सोबत राहा, सत्य जाणून घ्या.
+
+# तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."""
+
+
+# # ============================================================
+# # Main Pipeline
+# # ============================================================
+# async def main():
+#     global total_input_tokens, total_output_tokens, total_cost
+
+#     print("=" * 70)
+#     print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v5.0")
+#     print(f"🔍 Analysis : {ANALYSIS_MODEL}")
+#     print(f"✍️  Scripts  : {SCRIPT_MODEL}")
+#     print("=" * 70)
+#     print(f"📍 Sites    : TV9, ABP Majha, Lokmat, Mah Times, NDTV Marathi")
+#     print(f"📊 Target   : 10 × 5 = {TARGET_SCRIPTS} scripts STRICTLY")
+#     print(f"🔁 Buffer   : 40 links/site | 🔄 Retry: 3× fetch + 2× script")
+#     print(f"🇮🇳 Language: मराठी only | 🔗 Links: original URLs preserved")
+#     print("=" * 70 + "\n")
+
+#     start_time = datetime.now()
+
+#     # ── STEP 1: SCRAPING ─────────────────────────────────────────────
+#     print("=" * 70)
+#     print("STEP 1: SCRAPING 5 MARATHI NEWS SITES")
+#     print("=" * 70 + "\n")
+
+#     all_articles = await scrape_multiple_marathi_sources()
+
+#     # Final deduplication
+#     unique_articles = []
+#     seen_hashes = set()
+#     for article in all_articles:
+#         h = article.get('hash', get_content_hash(
+#             article['title'], article.get('detailed_summary', '')
+#         ))
+#         if h not in seen_hashes:
+#             unique_articles.append(article)
+#             seen_hashes.add(h)
+
+#     print(f"\n✅ Total unique articles: {len(unique_articles)}")
+
+#     # ✅ FIX: named function - no more lambda crash
+#     category_counts = {}
+#     for article in unique_articles:
+#         cat = article.get('category', 'general')
+#         category_counts[cat] = category_counts.get(cat, 0) + 1
+
+#     print("\n📊 Category Breakdown:")
+#     for cat, count in sorted(category_counts.items(), key=sort_by_count):
+#         bar = "█" * count
+#         print(f"   {cat.upper():<15} {bar} ({count})")
+
+#     # Sort by importance
+#     unique_articles.sort(key=sort_by_priority)
+#     selected_articles = unique_articles[:TARGET_SCRIPTS]
+
+#     print(f"\n🎯 Selected : {len(selected_articles)}/{TARGET_SCRIPTS}")
+#     print(f"⏱️  Scraping : {(datetime.now()-start_time).total_seconds():.0f}s\n")
+
+#     # ── STEP 2: SCRIPTS + SHEETS ──────────────────────────────────────
+#     print("=" * 70)
+#     print("STEP 2: GENERATING SCRIPTS → GOOGLE SHEETS")
+#     print("=" * 70 + "\n")
+
+#     worksheet        = setup_google_sheets()
+#     successful_saves = 0
+#     failed_saves     = 0
+
+#     if worksheet and selected_articles:
+#         for idx, article in enumerate(selected_articles, 1):
+#             print(f"\n[{idx:02d}/{len(selected_articles)}] "
+#                 f"{article.get('source','')[:12]} | "
+#                 f"{article.get('category','').upper():<13} | "
+#                 f"{article['title'][:40]}...")
+
+#             script = await create_reel_script_single(article)
+
+#             # ✅ Log Marathi percentage for debugging
+#             dev_chars  = len(re.findall(r'[\u0900-\u097F]', script))
+#             total_ch   = len(script.replace(' ', '').replace('\n', ''))
+#             marathi_pct = (dev_chars / max(total_ch, 1)) * 100
+#             lang_tag    = "🇮🇳" if marathi_pct > 35 else "⚠️ Non-Marathi"
+#             print(f"   📝 {lang_tag} ({marathi_pct:.0f}% Devanagari) | "
+#                 f"🔗 {article.get('link','')[:60]}...")
+
+#             success = save_to_google_sheets(
+#                 worksheet,
+#                 article.get('category', 'general'),
+#                 article['title'],
+#                 script,
+#                 article.get('link', '')
+#             )
+#             if success:
+#                 successful_saves += 1
+#             else:
+#                 failed_saves += 1
+
+#             await asyncio.sleep(1)
+
+#         print("\n" + "=" * 70)
+#         print(f"   ✅ Saved  : {successful_saves}/{len(selected_articles)}")
+#         print(f"   ❌ Failed : {failed_saves}")
+#         print(f"   📊 Sheet  : https://docs.google.com/spreadsheets/d/"
+#             f"{worksheet.spreadsheet.id}")
+
+#     else:
+#         print("⚠️ No articles or Sheets unavailable!")
+
+#     # ── FINAL SUMMARY ─────────────────────────────────────────────────
+#     total_duration = (datetime.now() - start_time).total_seconds()
+#     total_tokens   = total_input_tokens + total_output_tokens
+
+#     print("\n" + "=" * 70)
+#     print("📈 FINAL SUMMARY")
+#     print("=" * 70)
+#     print(f"   🔍 Analysis model     : {ANALYSIS_MODEL}")
+#     print(f"   ✍️  Script model       : {SCRIPT_MODEL}")
+#     print(f"   📰 Articles scraped   : {len(unique_articles)}")
+#     print(f"   ✅ Scripts generated  : {successful_saves}")
+#     print(f"   ⏱️  Total time         : {total_duration:.0f}s ({total_duration/60:.1f} mins)")
+#     print(f"   📥 Input tokens       : {total_input_tokens:,}")
+#     print(f"   📤 Output tokens      : {total_output_tokens:,}")
+#     print(f"   🔢 Total tokens       : {total_tokens:,}")
+#     print(f"   💰 Total cost         : ${total_cost:.4f} (~₹{total_cost*84:.2f})")
+#     print(f"   💵 Cost per script    : ${total_cost/max(successful_saves,1):.4f}")
+#     print("=" * 70 + "\n")
+
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
+
+
+
+
+
+# -----------------------------------------------
 
 
 import asyncio
@@ -2620,6 +3380,14 @@ import hashlib
 
 
 # ============================================================
+# Custom Exceptions
+# ============================================================
+class CreditExhaustedException(Exception):
+    """Raised when Perplexity API credits are exhausted"""
+    pass
+
+
+# ============================================================
 # Perplexity Client
 # ============================================================
 perplexity_client = OpenAI(
@@ -2627,8 +3395,8 @@ perplexity_client = OpenAI(
     base_url="https://api.perplexity.ai"
 )
 
-ANALYSIS_MODEL       = "sonar-pro"            # Cheap: categorization
-SCRIPT_MODEL         = "sonar-reasoning-pro"  # Quality: script writing
+ANALYSIS_MODEL       = "sonar-pro"
+SCRIPT_MODEL         = "sonar-reasoning-pro"
 
 ANALYSIS_INPUT_COST  = 1.0 / 1_000_000
 ANALYSIS_OUTPUT_COST = 1.0 / 1_000_000
@@ -2649,7 +3417,6 @@ VALID_CATEGORIES = [
     "education", "economy", "entertainment", "horror"
 ]
 
-# Refusal detection keywords
 REFUSAL_KEYWORDS = [
     "I appreciate", "I should clarify", "I'm Perplexity",
     "search assistant", "I'm not able", "I cannot create",
@@ -2668,7 +3435,7 @@ processed_hashes    = set()
 
 
 # ============================================================
-# News Sites - 10 articles × 5 sites = 50
+# News Sites
 # ============================================================
 NEWS_SITES = [
     {
@@ -2837,7 +3604,7 @@ def get_content_hash(title: str, content: str) -> str:
 
 
 # ============================================================
-# Sort helper - FIX for lambda crash
+# Sort helpers
 # ============================================================
 def sort_by_count(item):
     return -item[1]
@@ -2859,6 +3626,36 @@ def is_valid_marathi_script(script: str) -> bool:
     devanagari = len(re.findall(r'[\u0900-\u097F]', script))
     total      = len(script.replace(' ', '').replace('\n', ''))
     return (devanagari / max(total, 1)) > 0.35
+
+
+# ============================================================
+# API Credit Check
+# ============================================================
+async def check_api_credits():
+    try:
+        perplexity_client.chat.completions.create(
+            model=ANALYSIS_MODEL,
+            messages=[{"role": "user", "content": "ok"}],
+            max_tokens=1
+        )
+        print("✅ API credits OK")
+        return True
+    except Exception as e:
+        error_str = str(e).lower()
+        if any(code in error_str for code in [
+            '402', '429', '401',
+            'insufficient', 'credit', 'quota',
+            'balance', 'payment', 'billing',
+            'rate limit', 'exceeded'
+        ]):
+            print("=" * 60)
+            print("❌ PERPLEXITY API CREDITS EXHAUSTED!")
+            print(f"   Error: {str(e)}")
+            print("=" * 60)
+            print("👉 Top up: https://www.perplexity.ai/settings/api")
+            return False
+        print(f"❌ Unknown API error: {e}")
+        return False
 
 
 # ============================================================
@@ -2966,7 +3763,7 @@ async def scrape_multiple_marathi_sources():
                     if content_hash not in processed_hashes:
                         site_articles.append({
                             'title':            article['title'],
-                            'link':             article['link'],  # ✅ Always original URL
+                            'link':             article['link'],
                             'content':          content[:2500],
                             'hash':             content_hash,
                             'has_full_content': bool(markdown)
@@ -2998,38 +3795,40 @@ async def scrape_multiple_marathi_sources():
 
 
 # ============================================================
-# AI Categorization - sonar-pro + link preservation
+# AI Categorization - INDEX-BASED link preservation
 # ============================================================
 async def smart_analyze_with_category(articles: List[Dict], source_name: str):
     global total_input_tokens, total_output_tokens, total_cost
 
     all_filtered = []
 
-    # ✅ FIX: Store original links BEFORE sending to AI
-    original_links = {article['title']: article['link'] for article in articles}
+    for batch_start in range(0, len(articles), 5):
+        batch = articles[batch_start:batch_start + 5]
 
-    for i in range(0, len(articles), 5):
-        batch = articles[i:i+5]
+        # ✅ Store links and titles BY POSITION INDEX
+        index_to_link  = {i: article['link']  for i, article in enumerate(batch)}
+        index_to_title = {i: article['title'] for i, article in enumerate(batch)}
 
         articles_text = ""
-        for idx, article in enumerate(batch, i+1):
-            # ✅ 500 chars is enough to categorize (saves tokens)
-            articles_text += f"#{idx}: {article['title']}\n{article['content'][:500]}\n---\n"
+        for idx, article in enumerate(batch):
+            articles_text += f"INDEX_{idx}: {article['title']}\n{article['content'][:500]}\n---\n"
 
-        # ✅ No link field in JSON - prevents AI from overwriting real URLs
         prompt = f"""मराठी बातम्या विश्लेषक: खालील बातम्यांना category आणि Marathi summary द्या.
 
-⚠️ नियम: detailed_summary आणि key_points फक्त मराठीत लिहा.
+⚠️ नियम:
+1. detailed_summary आणि key_points फक्त मराठीत लिहा
+2. JSON मध्ये "index" field EXACTLY जसा दिला (0,1,2,3,4) तसाच परत द्या
+3. title आणि link field नको - फक्त index वापरा
 
 Categories: sports, general, crime, politics, education, economy, entertainment, horror
 
-JSON array (link field नको):
-[{{"title":"EXACT शीर्षक","category":"cat","detailed_summary":"१५०-२०० शब्द मराठी सारांश - कोण, काय, कुठे, केव्हा सह","importance":"high/medium/low","key_points":["मराठी मुद्दा १","मराठी मुद्दा २","मराठी मुद्दा ३"]}}]
+JSON array format:
+[{{"index": 0, "category": "cat", "detailed_summary": "मराठी सारांश १५०-२०० शब्द", "importance": "high/medium/low", "key_points": ["मुद्दा १", "मुद्दा २", "मुद्दा ३"]}}]
 
 बातम्या:
 {articles_text}
 
-फक्त JSON array. Link field नको."""
+फक्त JSON array. Index 0 ते {len(batch)-1} पर्यंत."""
 
         try:
             response = perplexity_client.chat.completions.create(
@@ -3037,7 +3836,7 @@ JSON array (link field नको):
                 messages=[
                     {
                         "role": "system",
-                        "content": "Return ONLY valid JSON array. No link field. Summaries in Marathi only."
+                        "content": "Return ONLY valid JSON array. Use index field (0,1,2...). No title or link fields."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -3056,58 +3855,66 @@ JSON array (link field नको):
 
             content = response.choices[0].message.content
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+
+            # ✅ CORRECT regex - single backslash, not double
             match = re.search(r'\[.*\]', content, re.DOTALL)
 
             if match:
                 parsed = json.loads(match.group())
 
-                # ✅ FIX: Restore original scraped links - never trust AI for URLs
                 for art in parsed:
-                    ai_title = art.get('title', '')
+                    idx = art.get('index')
 
-                    # Exact match first
-                    if ai_title in original_links:
-                        art['link'] = original_links[ai_title]
+                    # ✅ Always restore link and title from index
+                    if idx is not None and idx in index_to_link:
+                        art['link']  = index_to_link[idx]
+                        art['title'] = index_to_title[idx]
                     else:
-                        # Fuzzy match by longest common substring
-                        best_link  = ''
-                        best_score = 0
-                        for orig_title, orig_link in original_links.items():
-                            score = sum(
-                                1 for a, b in zip(ai_title[:40], orig_title[:40])
-                                if a == b
-                            )
-                            if score > best_score:
-                                best_score = score
-                                best_link  = orig_link
-                        art['link'] = best_link
+                        # Fallback: sequential position
+                        pos = len(all_filtered) % len(batch)
+                        art['link']  = index_to_link.get(pos, '')
+                        art['title'] = index_to_title.get(pos, art.get('title', ''))
+
+                    # Validate category
+                    if art.get('category') not in VALID_CATEGORIES:
+                        art['category'] = 'general'
 
                 all_filtered.extend(parsed)
-                print(f"   ✅ Categorized {len(parsed)} articles with original links")
+                print(f"   ✅ Categorized {len(parsed)} | Links: INDEX-matched ✅")
 
             else:
-                print(f"   ⚠️ JSON failed - using fallback entries")
-                for article in batch:
+                print(f"   ⚠️ JSON failed - fallback entries")
+                for i, article in enumerate(batch):
                     all_filtered.append({
+                        'index':            i,
                         'title':            article['title'],
                         'category':         'general',
                         'detailed_summary': article['content'][:300],
                         'importance':       'medium',
-                        'link':             article['link'],  # ✅ Always original
+                        'link':             article['link'],
                         'key_points':       [article['title']]
                     })
 
-        except json.JSONDecodeError:
-            for article in batch:
+        except json.JSONDecodeError as e:
+            print(f"   ❌ JSON parse error: {e}")
+            for i, article in enumerate(batch):
                 all_filtered.append({
+                    'index':            i,
                     'title':            article['title'],
                     'category':         'general',
                     'detailed_summary': article['content'][:300],
                     'importance':       'medium',
-                    'link':             article['link'],  # ✅ Always original
+                    'link':             article['link'],
                     'key_points':       [article['title']]
                 })
         except Exception as e:
+            error_str = str(e).lower()
+            if any(code in error_str for code in [
+                '402', '429', 'credit', 'quota',
+                'insufficient', 'balance', 'billing'
+            ]):
+                print(f"\n💳 CREDITS EXHAUSTED during analysis!")
+                raise CreditExhaustedException(str(e))
             print(f"   ❌ AI error: {e}")
 
         await asyncio.sleep(1.5)
@@ -3120,14 +3927,13 @@ JSON array (link field नको):
 
 
 # ============================================================
-# Script Generation - sonar-reasoning-pro + anti-refusal
+# Script Generation
 # ============================================================
 async def create_reel_script_single(news_article: Dict):
     global total_input_tokens, total_output_tokens, total_cost
 
     category = news_article.get('category', 'general')
 
-    # ✅ FIX: Framed as formatting task - prevents identity refusal
     system_prompt = """तुम्ही एक मराठी text formatter आहात.
 बातमीचे facts वापरून structured मराठी lines तयार करा.
 
@@ -3136,7 +3942,7 @@ Structure (15-18 lines total):
 - Line 3-10: सर्व facts (नावे, ठिकाण, तारीख, संख्या सह)
 - Line 11-14: प्रश्न / विश्लेषण / ट्विस्ट
 - Line 15-18: CTA - शेवटची line नक्की हीच असावी:
-  "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
+"तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
 
 नियम:
 - संपूर्ण output फक्त मराठीत (proper nouns सोडून)
@@ -3147,7 +3953,6 @@ Structure (15-18 lines total):
     summary    = news_article.get('detailed_summary', news_article.get('title', ''))[:300]
     key_points = ', '.join(news_article.get('key_points', [news_article.get('title', '')]))
 
-    # Standard prompt
     user_prompt_v1 = f"""Category: {category.upper()}
 शीर्षक: {news_article['title']}
 सारांश: {summary}
@@ -3155,7 +3960,6 @@ Structure (15-18 lines total):
 
 वरील बातमीचे facts वापरून 15-18 मराठी lines तयार करा."""
 
-    # Stronger fallback prompt (used on refusal)
     user_prompt_v2 = f"""खालील बातमीच्या facts वापरून 15 मराठी वाक्ये लिहा.
 बातमी: {news_article['title']}. {summary[:200]}
 प्रत्येक वाक्य नवीन line वर लिहा.
@@ -3189,7 +3993,6 @@ Structure (15-18 lines total):
             if is_valid_marathi_script(script):
                 return script
 
-            # Check reason for failure
             is_refusal = any(kw.lower() in script.lower() for kw in REFUSAL_KEYWORDS)
             if is_refusal:
                 print(f"   ⚠️ Attempt {attempt}: Model refused - retrying...")
@@ -3197,10 +4000,17 @@ Structure (15-18 lines total):
                 print(f"   ⚠️ Attempt {attempt}: Not valid Marathi - retrying...")
 
         except Exception as e:
+            error_str = str(e).lower()
+            if any(code in error_str for code in [
+                '402', '429', 'credit', 'quota',
+                'insufficient', 'balance', 'billing'
+            ]):
+                print(f"\n💳 CREDITS EXHAUSTED during script generation!")
+                raise CreditExhaustedException(str(e))
             print(f"   ⚠️ Attempt {attempt} error: {e}")
             await asyncio.sleep(2)
 
-    # ✅ 100% Marathi hardcoded fallback - always valid
+    # 100% Marathi hardcoded fallback
     title = news_article.get('title', 'एक महत्त्वाची बातमी')[:80]
     return f"""महाराष्ट्रात एक महत्त्वाची घडामोड समोर आली आहे.
 
@@ -3240,20 +4050,26 @@ async def main():
     print(f"🔍 Analysis : {ANALYSIS_MODEL}")
     print(f"✍️  Scripts  : {SCRIPT_MODEL}")
     print("=" * 70)
-    print(f"📍 Sites    : TV9, ABP Majha, Lokmat, Mah Times, NDTV Marathi")
-    print(f"📊 Target   : 10 × 5 = {TARGET_SCRIPTS} scripts STRICTLY")
-    print(f"🔁 Buffer   : 40 links/site | 🔄 Retry: 3× fetch + 2× script")
-    print(f"🇮🇳 Language: मराठी only | 🔗 Links: original URLs preserved")
-    print("=" * 70 + "\n")
+
+    # ✅ STEP 0: CHECK CREDITS BEFORE ANYTHING
+    credits_ok = await check_api_credits()
+    if not credits_ok:
+        print("\n🛑 Stopping. Top up credits first.")
+        print("👉 https://www.perplexity.ai/settings/api")
+        return
 
     start_time = datetime.now()
 
     # ── STEP 1: SCRAPING ─────────────────────────────────────────────
-    print("=" * 70)
+    print("\n" + "=" * 70)
     print("STEP 1: SCRAPING 5 MARATHI NEWS SITES")
     print("=" * 70 + "\n")
 
-    all_articles = await scrape_multiple_marathi_sources()
+    try:
+        all_articles = await scrape_multiple_marathi_sources()
+    except CreditExhaustedException:
+        print("\n🛑 Credits exhausted during scraping. Stopping.")
+        return
 
     # Final deduplication
     unique_articles = []
@@ -3268,7 +4084,7 @@ async def main():
 
     print(f"\n✅ Total unique articles: {len(unique_articles)}")
 
-    # ✅ FIX: named function - no more lambda crash
+    # Category breakdown
     category_counts = {}
     for article in unique_articles:
         cat = article.get('category', 'general')
@@ -3302,14 +4118,20 @@ async def main():
                 f"{article.get('category','').upper():<13} | "
                 f"{article['title'][:40]}...")
 
-            script = await create_reel_script_single(article)
+            try:
+                script = await create_reel_script_single(article)
+            except CreditExhaustedException:
+                print(f"\n🛑 Credits exhausted at script {idx}/{len(selected_articles)}")
+                print(f"   ✅ Saved so far: {successful_saves} scripts")
+                print(f"👉 Top up: https://www.perplexity.ai/settings/api")
+                break
 
-            # ✅ Log Marathi percentage for debugging
-            dev_chars  = len(re.findall(r'[\u0900-\u097F]', script))
-            total_ch   = len(script.replace(' ', '').replace('\n', ''))
+            # Log Marathi %
+            dev_chars   = len(re.findall(r'[\u0900-\u097F]', script))
+            total_ch    = len(script.replace(' ', '').replace('\n', ''))
             marathi_pct = (dev_chars / max(total_ch, 1)) * 100
-            lang_tag    = "🇮🇳" if marathi_pct > 35 else "⚠️ Non-Marathi"
-            print(f"   📝 {lang_tag} ({marathi_pct:.0f}% Devanagari) | "
+            lang_tag    = "🇮🇳" if marathi_pct > 35 else "⚠️"
+            print(f"   📝 {lang_tag} ({marathi_pct:.0f}%) | "
                 f"🔗 {article.get('link','')[:60]}...")
 
             success = save_to_google_sheets(
@@ -3326,15 +4148,6 @@ async def main():
 
             await asyncio.sleep(1)
 
-        print("\n" + "=" * 70)
-        print(f"   ✅ Saved  : {successful_saves}/{len(selected_articles)}")
-        print(f"   ❌ Failed : {failed_saves}")
-        print(f"   📊 Sheet  : https://docs.google.com/spreadsheets/d/"
-            f"{worksheet.spreadsheet.id}")
-
-    else:
-        print("⚠️ No articles or Sheets unavailable!")
-
     # ── FINAL SUMMARY ─────────────────────────────────────────────────
     total_duration = (datetime.now() - start_time).total_seconds()
     total_tokens   = total_input_tokens + total_output_tokens
@@ -3345,17 +4158,19 @@ async def main():
     print(f"   🔍 Analysis model     : {ANALYSIS_MODEL}")
     print(f"   ✍️  Script model       : {SCRIPT_MODEL}")
     print(f"   📰 Articles scraped   : {len(unique_articles)}")
-    print(f"   ✅ Scripts generated  : {successful_saves}")
+    print(f"   ✅ Scripts saved      : {successful_saves}")
+    print(f"   ❌ Failed             : {failed_saves}")
     print(f"   ⏱️  Total time         : {total_duration:.0f}s ({total_duration/60:.1f} mins)")
     print(f"   📥 Input tokens       : {total_input_tokens:,}")
     print(f"   📤 Output tokens      : {total_output_tokens:,}")
     print(f"   🔢 Total tokens       : {total_tokens:,}")
     print(f"   💰 Total cost         : ${total_cost:.4f} (~₹{total_cost*84:.2f})")
     print(f"   💵 Cost per script    : ${total_cost/max(successful_saves,1):.4f}")
+    if worksheet:
+        print(f"   📊 Sheet URL          : https://docs.google.com/spreadsheets/d/"
+            f"{worksheet.spreadsheet.id}")
     print("=" * 70 + "\n")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
