@@ -3409,7 +3409,7 @@ SCRIPT_OUTPUT_COST   = 8.0 / 1_000_000
 # ============================================================
 GOOGLE_SHEETS_CREDENTIALS_FILE = "credentials.json"
 GOOGLE_SHEET_NAME               = "Instagram Scripts"
-GOOGLE_WORKSHEET_NAME           = "Scripts"
+GOOGLE_WORKSHEET_NAME           = "Scritpsfinal"
 TARGET_SCRIPTS                  = 10
 
 VALID_CATEGORIES = [
