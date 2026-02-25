@@ -3410,7 +3410,7 @@ SCRIPT_OUTPUT_COST   = 8.0 / 1_000_000
 GOOGLE_SHEETS_CREDENTIALS_FILE = "credentials.json"
 GOOGLE_SHEET_NAME               = "Instagram Scripts"
 GOOGLE_WORKSHEET_NAME           = "Scripts"
-TARGET_SCRIPTS                  = 50
+TARGET_SCRIPTS                  = 10
 
 VALID_CATEGORIES = [
     "sports", "general", "crime", "politics",
@@ -3442,36 +3442,36 @@ NEWS_SITES = [
         "name": "TV9 Marathi",
         "url": "https://www.tv9marathi.com/latest-news",
         "link_pattern": "tv9marathi.com",
-        "target": 10,
-        "fetch_limit": 40
+        "target": 2,
+        "fetch_limit": 10
     },
     {
         "name": "ABP Majha",
         "url": "https://marathi.abplive.com/news",
         "link_pattern": "abplive.com",
-        "target": 10,
-        "fetch_limit": 40
+        "target": 2,
+        "fetch_limit": 10
     },
     {
         "name": "Lokmat",
         "url": "https://www.lokmat.com/latestnews/",
         "link_pattern": "lokmat.com",
-        "target": 10,
-        "fetch_limit": 40
+        "target": 2,
+        "fetch_limit": 10
     },
     {
         "name": "Maharashtra Times",
         "url": "https://maharashtratimes.com/",
         "link_pattern": "maharashtratimes.com",
-        "target": 10,
-        "fetch_limit": 40
+        "target": 2,
+        "fetch_limit": 10
     },
     {
         "name": "NDTV Marathi",
         "url": "https://marathi.ndtv.com/",
         "link_pattern": "marathi.ndtv.com",
-        "target": 10,
-        "fetch_limit": 40
+        "target": 2,
+        "fetch_limit": 10
     }
 ]
 
