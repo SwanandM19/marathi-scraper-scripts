@@ -5884,8 +5884,6 @@
 # if __name__ == "__main__":
 #     asyncio.run(main())
 
-
-
 import asyncio
 import json
 from datetime import datetime
@@ -5940,27 +5938,26 @@ VALID_CATEGORIES = [
     "education", "economy", "entertainment", "horror"
 ]
 
-# ✅ EXPANDED: catches all refusal types including self-identification
 REFUSAL_KEYWORDS = [
     # English
     "I appreciate", "I should clarify", "I'm Perplexity",
     "search assistant", "I'm not able", "I cannot create",
     "Would you like", "clarify my role", "I'm an AI",
     "as an AI", "I don't create",
-    # Hindi refusals
+    # Hindi
     "मुझे खेद है", "मैं इस अनुरोध", "खोज परिणामों में",
     "प्रदान किए गए", "कृपया स्पष्ट करें", "मैं सही तरीके",
     "विशिष्ट तथ्य नहीं", "आवश्यक माहिती",
-    # Marathi refusals
+    # Marathi
     "मला खेद आहे", "मला क्षमस्व", "उत्तर देण्यासाठी आवश्यक",
     "शोध परिणामांमध्ये", "कृपया एक पूर्ण बातमी",
     "अधिक संबंधित शोध", "विशिष्ट घटना", "तपशील पुनः तपास",
-    # ✅ NEW: self-identification as Perplexity/AI
+    # Self-identification
     "मी Perplexity", "मी perplexity", "माझी भूमिका",
     "मूळ कार्याच्या विरुद्ध", "script लिहिण्याची विनंती",
     "सूचना देणे", "संशोधित उत्तरे", "मी एक AI",
     "script writer नाही", "मी तयार करू शकत नाही",
-    # ✅ NEW: fact-checking / clarification responses
+    # Fact-checking / clarification
     "शोध निकालांमध्ये", "मेल होत नाही", "script तयार करू शकतो पण",
     "विस्तृत search results", "स्पष्ट करा"
 ]
@@ -5983,8 +5980,6 @@ SKIP_CONTENT_KEYWORDS = [
     'utility news definition'
 ]
 
-
-# ✅ The exact CTA that must end every script
 SCRIPT_CTA = "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
 
 
@@ -5998,7 +5993,7 @@ processed_hashes    = set()
 
 
 # ============================================================
-# News Sites — increased fetch_limit to 30 to ensure 4 found
+# News Sites
 # ============================================================
 NEWS_SITES = [
     {
@@ -6006,7 +6001,7 @@ NEWS_SITES = [
         "url": "https://www.tv9marathi.com/latest-news",
         "link_pattern": "tv9marathi.com",
         "target": 4,
-        "fetch_limit": 30   # ✅ increased from 20 → 30
+        "fetch_limit": 30
     },
     {
         "name": "ABP Majha",
@@ -6063,11 +6058,9 @@ def setup_google_sheets():
         try:
             worksheet = sheet.worksheet(GOOGLE_WORKSHEET_NAME)
             print(f"✅ Worksheet: '{GOOGLE_WORKSHEET_NAME}'")
-
             current_rows = worksheet.row_count
             if current_rows < 2000:
-                rows_to_add = 5000 - current_rows
-                worksheet.add_rows(rows_to_add)
+                worksheet.add_rows(5000 - current_rows)
                 print(f"✅ Expanded sheet: {current_rows} → 5000 rows")
             else:
                 print(f"✅ Sheet has {current_rows} rows — OK")
@@ -6167,7 +6160,7 @@ def save_to_google_sheets(worksheet, category, title, script, source_link):
 
 
 # ============================================================
-# Content Hash
+# Helpers
 # ============================================================
 def get_content_hash(title: str, content: str) -> str:
     return hashlib.md5(
@@ -6175,21 +6168,14 @@ def get_content_hash(title: str, content: str) -> str:
     ).hexdigest()
 
 
-# ============================================================
-# Sort helpers
-# ============================================================
 def sort_by_count(item):
     return -item[1]
 
 
 def sort_by_priority(item):
-    priority_order = {'high': 1, 'medium': 2, 'low': 3}
-    return priority_order.get(item.get('importance', 'medium'), 2)
+    return {'high': 1, 'medium': 2, 'low': 3}.get(item.get('importance', 'medium'), 2)
 
 
-# ============================================================
-# Safe Content Truncation — never cuts mid-Devanagari word
-# ============================================================
 def safe_truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
@@ -6205,45 +6191,60 @@ def safe_truncate(text: str, max_chars: int) -> str:
 
 
 # ============================================================
-# ✅ NEW: Script Completion Check & Callback
+# Safe API Response Extractor
+# ============================================================
+def extract_response_content(response) -> str:
+    """
+    Safely extract text content from Perplexity API response,
+    handling all known response formats including list-type content blocks.
+    """
+    raw_choice = response.choices[0]
+
+    if hasattr(raw_choice, 'message'):
+        msg = raw_choice.message
+        if hasattr(msg, 'content') and isinstance(msg.content, str):
+            return msg.content
+        elif hasattr(msg, 'content') and isinstance(msg.content, list):
+            return ' '.join(
+                block.get('text', '') if isinstance(block, dict) else str(block)
+                for block in msg.content
+            )
+        elif isinstance(msg, list):
+            return ' '.join(
+                block.get('text', '') if isinstance(block, dict) else str(block)
+                for block in msg
+            )
+        else:
+            return str(msg)
+    elif isinstance(raw_choice, dict):
+        msg = raw_choice.get('message', {})
+        return msg.get('content', '') if isinstance(msg, dict) else str(msg)
+    else:
+        return str(raw_choice)
+
+
+# ============================================================
+# Script Completion Check & Callback
 # ============================================================
 def is_script_complete(script: str) -> bool:
-    """Check if script ends with the required CTA."""
     return script.strip().endswith(SCRIPT_CTA.strip())
 
 
 def get_last_line(script: str) -> str:
-    """Get the last non-empty line of the script."""
     lines = [l.strip() for l in script.strip().split('\n') if l.strip()]
     return lines[-1] if lines else ""
 
 
 async def complete_script_if_needed(script: str, news_article: Dict) -> str:
-    """
-    ✅ NEW: If script is cut off or missing CTA, call AI to complete it.
-    Returns the completed script.
-    """
     global total_input_tokens, total_output_tokens, total_cost
 
     if is_script_complete(script):
         return script
 
     last_line = get_last_line(script)
-    print(f"   🔧 Script incomplete — last line: '{last_line[:60]}...' — completing...")
+    print(f"   🔧 Script incomplete — last: '{last_line[:60]}' — completing...")
 
     try:
-        completion_prompt = f"""खालील अर्धवट मराठी script पूर्ण करा.
-
-अर्धवट script:
-{script}
-
-नियम:
-- वरील script च्या पुढे फक्त उर्वरित lines लिहा
-- नवीन lines जोडा जेणेकरून एकूण 15-18 lines होतील
-- शेवटची line नक्की हीच असावी: "{SCRIPT_CTA}"
-- फक्त नवीन lines लिहा, जुन्या lines परत लिहू नका
-- फक्त मराठीत लिहा"""
-
         response = perplexity_client.chat.completions.create(
             model=SCRIPT_MODEL,
             messages=[
@@ -6251,10 +6252,23 @@ async def complete_script_if_needed(script: str, news_article: Dict) -> str:
                     "role": "system",
                     "content": f'फक्त मराठी lines लिहा. शेवटची line नक्की हीच: "{SCRIPT_CTA}"'
                 },
-                {"role": "user", "content": completion_prompt}
+                {
+                    "role": "user",
+                    "content": f"""खालील अर्धवट मराठी script पूर्ण करा.
+
+अर्धवट script:
+{script}
+
+नियम:
+- वरील script च्या पुढे फक्त उर्वरित lines लिहा
+- नवीन lines जोडा जेणेकरून एकूण 15-18 lines होतील
+- शेवटची line नक्की हीच: "{SCRIPT_CTA}"
+- फक्त नवीन lines लिहा, जुन्या lines परत लिहू नका
+- फक्त मराठीत लिहा"""
+                }
             ],
             temperature=0.7,
-            max_tokens=600   # only need the remaining lines
+            max_tokens=600
         )
 
         if hasattr(response, 'usage'):
@@ -6264,22 +6278,19 @@ async def complete_script_if_needed(script: str, news_article: Dict) -> str:
             total_output_tokens += o_t
             total_cost += (i_t * SCRIPT_INPUT_COST) + (o_t * SCRIPT_OUTPUT_COST)
 
-        completion = response.choices[0].message.content.strip()
+        completion = extract_response_content(response).strip()
         completion = re.sub(r'<think>.*?</think>', '', completion, flags=re.DOTALL).strip()
         completion = completion.replace('```', '').strip()
 
-        # Check if completion itself is a refusal
         if any(kw.lower() in completion.lower() for kw in REFUSAL_KEYWORDS):
             print(f"   ⚠️ Completion refused — appending CTA directly")
             return script.strip() + f"\n\n{SCRIPT_CTA}"
 
         completed = script.strip() + "\n\n" + completion.strip()
-
-        # Final safety: ensure CTA exists
         if not is_script_complete(completed):
             completed = completed.strip() + f"\n\n{SCRIPT_CTA}"
 
-        print(f"   ✅ Script completed successfully")
+        print(f"   ✅ Script completed")
         return completed
 
     except Exception as e:
@@ -6318,10 +6329,8 @@ async def check_api_credits():
     except Exception as e:
         error_str = str(e).lower()
         if any(code in error_str for code in [
-            '402', '429', '401',
-            'insufficient', 'credit', 'quota',
-            'balance', 'payment', 'billing',
-            'rate limit', 'exceeded'
+            '402', '429', '401', 'insufficient', 'credit',
+            'quota', 'balance', 'payment', 'billing', 'rate limit', 'exceeded'
         ]):
             print("=" * 60)
             print("❌ PERPLEXITY API CREDITS EXHAUSTED!")
@@ -6431,7 +6440,6 @@ async def scrape_multiple_marathi_sources():
 
                 print(f"📋 Found {len(unique_links)} unique links")
 
-                # ✅ No hard cap — iterate all unique_links until target reached
                 for article in unique_links:
                     if len(site_articles) >= site['target']:
                         break
@@ -6550,20 +6558,15 @@ JSON array format:
                 total_cost += c
                 print(f"   📊 {i_t}in + {o_t}out = ${c:.4f}")
 
-            # ✅ FIX: safe response content extraction
-            raw_choice = response.choices[0]
-            if hasattr(raw_choice, 'message') and hasattr(raw_choice.message, 'content'):
-                content = raw_choice.message.content or ''
-            elif isinstance(raw_choice, dict):
-                content = raw_choice.get('message', {}).get('content', '')
-            else:
-                content = str(raw_choice)
+            # ✅ Safe extraction
+            content = extract_response_content(response)
 
             if not content.strip():
-                raise ValueError("Empty response content from API")
+                print(f"   ⚠️ Empty response! type: {type(response.choices)}")
+                print(f"   ⚠️ dump: {str(response.choices)[:300]}")
+                raise ValueError("Empty content from API")
 
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
-
             match = re.search(r'\[.*\]', content, re.DOTALL)
 
             if match:
@@ -6586,14 +6589,13 @@ JSON array format:
                 print(f"   ✅ Categorized {len(parsed)} | Links: INDEX-matched ✅")
 
             else:
-                print(f"   ⚠️ JSON not found in response — fallback entries")
-                print(f"   📄 Raw response: {content[:200]}")
+                print(f"   ⚠️ No JSON found — raw: {content[:200]}")
                 for i, article in enumerate(batch):
                     all_filtered.append({
                         'index':            i,
                         'title':            article['title'],
                         'category':         'general',
-                        'detailed_summary': safe_truncate(article['content'], 300),
+                        'detailed_summary': safe_truncate(article['content'], 600),
                         'importance':       'medium',
                         'link':             article['link'],
                         'key_points':       [article['title']]
@@ -6606,30 +6608,33 @@ JSON array format:
                     'index':            i,
                     'title':            article['title'],
                     'category':         'general',
-                    'detailed_summary': safe_truncate(article['content'], 300),
+                    'detailed_summary': safe_truncate(article['content'], 600),
                     'importance':       'medium',
                     'link':             article['link'],
                     'key_points':       [article['title']]
                 })
+
         except Exception as e:
             error_str = str(e).lower()
             if any(code in error_str for code in [
-                '402', '429', 'credit', 'quota',
-                'insufficient', 'balance', 'billing'
+                '402', '429', 'credit', 'quota', 'insufficient', 'balance', 'billing'
             ]):
                 print(f"\n💳 CREDITS EXHAUSTED during analysis!")
                 raise CreditExhaustedException(str(e))
             print(f"   ❌ AI error: {e}")
-            # ✅ FIX: fallback instead of losing all articles on any error
+            # ✅ Fallback with real content — never loses articles
             for i, article in enumerate(batch):
                 all_filtered.append({
                     'index':            i,
                     'title':            article['title'],
                     'category':         'general',
-                    'detailed_summary': safe_truncate(article['content'], 300),
+                    'detailed_summary': safe_truncate(article['content'], 600),
                     'importance':       'medium',
                     'link':             article['link'],
-                    'key_points':       [article['title']]
+                    'key_points':       [
+                        article['title'],
+                        safe_truncate(article['content'], 100)
+                    ]
                 })
 
         await asyncio.sleep(1.5)
@@ -6709,58 +6714,54 @@ Structure (15-18 lines total):
                 total_output_tokens += o_t
                 total_cost += (i_t * SCRIPT_INPUT_COST) + (o_t * SCRIPT_OUTPUT_COST)
 
-            script = response.choices.message.content.strip()
+            # ✅ Safe extraction
+            script = extract_response_content(response).strip()
             script = re.sub(r'<think>.*?</think>', '', script, flags=re.DOTALL).strip()
             script = script.replace('```', '').strip()
 
-            # ✅ Check for refusal first
             if any(kw.lower() in script.lower() for kw in REFUSAL_KEYWORDS):
-                print(f"   ⚠️ Attempt {attempt}: Refusal detected — '{script[:60]}...' — retrying...")
+                print(f"   ⚠️ Attempt {attempt}: Refusal — '{script[:60]}...' — retrying...")
                 continue
 
             if is_valid_marathi_script(script):
-                # ✅ COMPLETION CALLBACK: fix cut-off before returning
                 script = await complete_script_if_needed(script, news_article)
                 return script
 
-            print(f"   ⚠️ Attempt {attempt}: Not valid Marathi - retrying...")
+            print(f"   ⚠️ Attempt {attempt}: Not valid Marathi ({script[:60]}...) — retrying...")
 
         except CreditExhaustedException:
             raise
         except Exception as e:
             error_str = str(e).lower()
             if any(code in error_str for code in [
-                '402', '429', 'credit', 'quota',
-                'insufficient', 'balance', 'billing'
+                '402', '429', 'credit', 'quota', 'insufficient', 'balance', 'billing'
             ]):
                 raise CreditExhaustedException(str(e))
             print(f"   ⚠️ Attempt {attempt} error: {e}")
             await asyncio.sleep(2)
 
-    title = news_article.get('title', 'एक महत्त्वाची बातमी')[:80]
-    return f"""महाराष्ट्रात एक महत्त्वाची घडामोड समोर आली आहे.
+    # Last-resort fallback with real article content
+    title   = news_article.get('title', 'एक महत्त्वाची बातमी')[:80]
+    summary = safe_truncate(
+        news_article.get('detailed_summary', news_article.get('title', '')), 200
+    )
+    return f"""{title}
 
-{title}
+{summary}
 
-ही बातमी सध्या सर्वत्र चर्चेत आहे.
+ही घटना राज्यात मोठी चर्चा निर्माण करत आहे.
 
-या घटनेने अनेकांना आश्चर्यचकित केले आहे.
+या प्रकरणात अनेक महत्त्वाचे प्रश्न उपस्थित होत आहेत.
 
-सर्वसामान्य नागरिकांवर याचा थेट परिणाम होणार आहे.
+संबंधित यंत्रणांनी याबाबत तातडीने उत्तर देणे आवश्यक आहे.
 
-प्रशासनाने याबाबत अद्याप अधिकृत प्रतिक्रिया दिलेली नाही.
+सर्वसामान्य जनतेवर या घटनेचा थेट परिणाम होणार आहे.
 
-विरोधकांनी या निर्णयावर जोरदार टीका केली आहे.
+विरोधी पक्षाने या मुद्द्यावर सरकारला धारेवर धरले आहे.
 
-येत्या काही दिवसांत यावर मोठा निर्णय होण्याची शक्यता आहे.
+येत्या काळात या प्रकरणात मोठी उलथापालथ होण्याची शक्यता आहे.
 
-तुम्हाला या बातमीबद्दल काय वाटते?
-
-या प्रकरणाकडे सर्वांचे लक्ष लागले आहे.
-
-अशा महत्त्वाच्या बातम्यांसाठी आमचे पेज फॉलो करा.
-
-जबरी खबरी सोबत राहा, सत्य जाणून घ्या.
+तुम्हाला या बातमीबद्दल काय वाटते, ते नक्की सांगा.
 
 {SCRIPT_CTA}"""
 
@@ -6772,7 +6773,7 @@ async def main():
     global total_input_tokens, total_output_tokens, total_cost
 
     print("=" * 70)
-    print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v9.0")
+    print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v10.0")
     print(f"🔍 Analysis : {ANALYSIS_MODEL}")
     print(f"✍️  Scripts  : {SCRIPT_MODEL}")
     print(f"🎯 Target   : {TARGET_SCRIPTS} scripts")
@@ -6809,7 +6810,6 @@ async def main():
 
     print(f"\n✅ Total unique articles: {len(unique_articles)}")
 
-    # ✅ Warn if fewer than target scraped
     if len(unique_articles) < TARGET_SCRIPTS:
         print(f"⚠️  Only {len(unique_articles)} articles found — "
               f"will generate {len(unique_articles)} scripts instead of {TARGET_SCRIPTS}")
@@ -6821,8 +6821,7 @@ async def main():
 
     print("\n📊 Category Breakdown:")
     for cat, count in sorted(category_counts.items(), key=sort_by_count):
-        bar = "█" * count
-        print(f"   {cat.upper():<15} {bar} ({count})")
+        print(f"   {cat.upper():<15} {'█' * count} ({count})")
 
     unique_articles.sort(key=sort_by_priority)
     selected_articles = unique_articles[:TARGET_SCRIPTS]
