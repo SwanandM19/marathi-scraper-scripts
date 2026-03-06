@@ -5974,14 +5974,15 @@ SKIP_TITLE_KEYWORDS = [
 ]
 
 SKIP_CONTENT_KEYWORDS = [
-    'tv9 मराठी एक 24/7',
-    'अध्यात्म बातम्यांचा विशेष विभाग',
-    'राशीभविष्य, मंदिरातील पूजा',
-    'आध्यात्मिक जीवनाची',
-    'धार्मिक आणि आध्यात्मिक विषयांवर',
-    'यूटिलिटी बातम्या',
-    'utility news'
+    'tv9 मराठी एक 24/7 मराठी भाषिक वृत्तवाहिनी',
+    'अध्यात्म बातम्यांचा विशेष विभाग आहे जो',
+    'राशीभविष्य, मंदिरातील पूजा, धार्मिक परंपरा',
+    'आध्यात्मिक जीवनाची संपूर्ण माहिती',
+    'धार्मिक आणि आध्यात्मिक विषयांवर सर्वांग माहिती',
+    'यूटिलिटी बातम्या म्हणजे काय',
+    'utility news definition'
 ]
+
 
 # ✅ The exact CTA that must end every script
 SCRIPT_CTA = "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
@@ -6549,7 +6550,18 @@ JSON array format:
                 total_cost += c
                 print(f"   📊 {i_t}in + {o_t}out = ${c:.4f}")
 
-            content = response.choices.message.content
+            # ✅ FIX: safe response content extraction
+            raw_choice = response.choices[0]
+            if hasattr(raw_choice, 'message') and hasattr(raw_choice.message, 'content'):
+                content = raw_choice.message.content or ''
+            elif isinstance(raw_choice, dict):
+                content = raw_choice.get('message', {}).get('content', '')
+            else:
+                content = str(raw_choice)
+
+            if not content.strip():
+                raise ValueError("Empty response content from API")
+
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
 
             match = re.search(r'\[.*\]', content, re.DOTALL)
@@ -6574,7 +6586,8 @@ JSON array format:
                 print(f"   ✅ Categorized {len(parsed)} | Links: INDEX-matched ✅")
 
             else:
-                print(f"   ⚠️ JSON failed - fallback entries")
+                print(f"   ⚠️ JSON not found in response — fallback entries")
+                print(f"   📄 Raw response: {content[:200]}")
                 for i, article in enumerate(batch):
                     all_filtered.append({
                         'index':            i,
@@ -6607,6 +6620,17 @@ JSON array format:
                 print(f"\n💳 CREDITS EXHAUSTED during analysis!")
                 raise CreditExhaustedException(str(e))
             print(f"   ❌ AI error: {e}")
+            # ✅ FIX: fallback instead of losing all articles on any error
+            for i, article in enumerate(batch):
+                all_filtered.append({
+                    'index':            i,
+                    'title':            article['title'],
+                    'category':         'general',
+                    'detailed_summary': safe_truncate(article['content'], 300),
+                    'importance':       'medium',
+                    'link':             article['link'],
+                    'key_points':       [article['title']]
+                })
 
         await asyncio.sleep(1.5)
 
