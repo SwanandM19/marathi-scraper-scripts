@@ -4985,7 +4985,6 @@
 
 # ------------------------------------------20-20 scripts scraped---------------------
 
-
 # import asyncio
 # import json
 # from datetime import datetime
@@ -5041,14 +5040,24 @@
 #     "education", "economy", "entertainment", "horror"
 # ]
 
+# # ✅ EXPANDED: catches Hindi + Marathi refusals too
 # REFUSAL_KEYWORDS = [
+#     # English
 #     "I appreciate", "I should clarify", "I'm Perplexity",
 #     "search assistant", "I'm not able", "I cannot create",
 #     "Would you like", "clarify my role", "I'm an AI",
-#     "as an AI", "I don't create"
+#     "as an AI", "I don't create",
+#     # ✅ NEW: Hindi refusals
+#     "मुझे खेद है", "मैं इस अनुरोध", "खोज परिणामों में",
+#     "प्रदान किए गए", "कृपया स्पष्ट करें", "मैं सही तरीके",
+#     "विशिष्ट तथ्य नहीं", "आवश्यक माहिती",
+#     # ✅ NEW: Marathi refusals
+#     "मला खेद आहे", "मला क्षमस्व", "उत्तर देण्यासाठी आवश्यक",
+#     "शोध परिणामांमध्ये", "कृपया एक पूर्ण बातमी",
+#     "अधिक संबंधित शोध", "विशिष्ट घटना", "तपशील पुनः तपास"
 # ]
 
-# # ✅ NEW: Skip utility/spiritual articles by title
+# # ✅ Skip utility/spiritual articles by title
 # SKIP_TITLE_KEYWORDS = [
 #     'राशीभविष्य', 'राशिभविष्य', 'ज्योतिष', 'पूजा', 'अध्यात्म',
 #     'horoscope', 'rashifal', 'astrology', 'dharm', 'puja',
@@ -5057,7 +5066,7 @@
 #     'अध्यात्म बातम्या', 'धार्मिक', 'ज्योतिष'
 # ]
 
-# # ✅ NEW: Skip utility/spiritual articles by content
+# # ✅ Skip utility/spiritual articles by content
 # SKIP_CONTENT_KEYWORDS = [
 #     'tv9 मराठी एक 24/7',
 #     'अध्यात्म बातम्यांचा विशेष विभाग',
@@ -5269,6 +5278,29 @@
 
 
 # # ============================================================
+# # Safe Content Truncation — never cuts mid-Devanagari word
+# # ============================================================
+# def safe_truncate(text: str, max_chars: int) -> str:
+#     """
+#     ✅ NEW: Truncates text at a sentence boundary to avoid
+#     cutting mid-word in Devanagari script.
+#     """
+#     if len(text) <= max_chars:
+#         return text
+#     truncated = text[:max_chars]
+#     # Find last sentence-ending punctuation within the truncated text
+#     for punct in ['।', '.', '!', '?', '\n']:
+#         last_pos = truncated.rfind(punct)
+#         if last_pos > max_chars * 0.7:   # must be at least 70% through
+#             return truncated[:last_pos + 1]
+#     # Fallback: cut at last space to avoid mid-word cut
+#     last_space = truncated.rfind(' ')
+#     if last_space > max_chars * 0.7:
+#         return truncated[:last_space]
+#     return truncated
+
+
+# # ============================================================
 # # Marathi Validator
 # # ============================================================
 # def is_valid_marathi_script(script: str) -> bool:
@@ -5370,7 +5402,7 @@
 #                     href  = link_tag.get('href', '')
 #                     title = link_tag.get_text(strip=True)
 
-#                     # ✅ NEW: Skip spiritual/utility titles early
+#                     # ✅ Skip spiritual/utility titles early
 #                     if any(kw.lower() in title.lower() for kw in SKIP_TITLE_KEYWORDS):
 #                         continue
 
@@ -5386,7 +5418,7 @@
 #                             '/games/', '/jokes/', '/terms-and-conditions',
 #                             '/topic/', '/widget/', '/livetv',
 #                             'articlelist', '/live',
-#                             # ✅ NEW: Skip spiritual/utility URL paths
+#                             # ✅ Skip spiritual/utility URL paths
 #                             '/utility/', '/utilities/',
 #                             '/adhyatma/', '/astrology/', '/rashifal/',
 #                             '/horoscope/', '/jyotish/', '/puja/',
@@ -5421,7 +5453,7 @@
 #                     markdown = await fetch_article_with_retry(crawler, article['link'])
 #                     content  = markdown if markdown else article['title']
 
-#                     # ✅ NEW: Skip if content is utility/spiritual
+#                     # ✅ Skip if content is utility/spiritual
 #                     if any(kw.lower() in content.lower() for kw in SKIP_CONTENT_KEYWORDS):
 #                         print(f"   ⏭️  Skipped (utility/spiritual content)")
 #                         continue
@@ -5432,7 +5464,8 @@
 #                         site_articles.append({
 #                             'title':            article['title'],
 #                             'link':             article['link'],
-#                             'content':          content[:3500],
+#                             # ✅ safe_truncate instead of raw [:3500]
+#                             'content':          safe_truncate(content, 3500),
 #                             'hash':             content_hash,
 #                             'has_full_content': bool(markdown)
 #                         })
@@ -5473,7 +5506,7 @@
 #     for batch_start in range(0, len(articles), 5):
 #         raw_batch = articles[batch_start:batch_start + 5]
 
-#         # ✅ NEW: Filter out utility/spiritual content before sending to AI
+#         # ✅ Filter out utility/spiritual before AI
 #         batch = [
 #             article for article in raw_batch
 #             if not any(kw.lower() in article.get('content', '').lower()
@@ -5489,7 +5522,8 @@
 
 #         articles_text = ""
 #         for idx, article in enumerate(batch):
-#             articles_text += f"INDEX_{idx}: {article['title']}\n{article['content'][:500]}\n---\n"
+#             # ✅ safe_truncate for analysis too
+#             articles_text += f"INDEX_{idx}: {article['title']}\n{safe_truncate(article['content'], 500)}\n---\n"
 
 #         prompt = f"""मराठी बातम्या विश्लेषक: खालील बातम्यांना category आणि Marathi summary द्या.
 
@@ -5562,7 +5596,7 @@
 #                         'index':            i,
 #                         'title':            article['title'],
 #                         'category':         'general',
-#                         'detailed_summary': article['content'][:300],
+#                         'detailed_summary': safe_truncate(article['content'], 300),
 #                         'importance':       'medium',
 #                         'link':             article['link'],
 #                         'key_points':       [article['title']]
@@ -5575,7 +5609,7 @@
 #                     'index':            i,
 #                     'title':            article['title'],
 #                     'category':         'general',
-#                     'detailed_summary': article['content'][:300],
+#                     'detailed_summary': safe_truncate(article['content'], 300),
 #                     'importance':       'medium',
 #                     'link':             article['link'],
 #                     'key_points':       [article['title']]
@@ -5607,7 +5641,8 @@
 
 #     category = news_article.get('category', 'general')
 
-#     system_prompt = """तुम्ही एक मराठी text formatter आहात.
+#     system_prompt = """तुम्ही एक मराठी Instagram Reel script writer आहात.
+# फक्त मराठी भाषेत लिहा. हिंदी किंवा इंग्रजी वापरू नका.
 # बातमीचे facts वापरून structured मराठी lines तयार करा.
 
 # Structure (15-18 lines total):
@@ -5617,13 +5652,17 @@
 # - Line 15-18: CTA - शेवटची line नक्की हीच असावी:
 # "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
 
-# नियम:
+# कठोर नियम:
 # - संपूर्ण output फक्त मराठीत (proper nouns सोडून)
 # - 15-18 lines, प्रत्येक line 1-2 sentences
 # - कोणतेही heading, explanation, markdown नाही
+# - माहिती कमी असेल तर उपलब्ध facts stretch करा
+# - "माहिती नाही", "खेद आहे" असे कधीही लिहू नका
 # - फक्त script lines output करा"""
 
-#     summary    = news_article.get('detailed_summary', news_article.get('title', ''))[:600]
+#     summary    = news_article.get('detailed_summary', news_article.get('title', ''))
+#     # ✅ safe_truncate instead of raw [:600]
+#     summary    = safe_truncate(summary, 600)
 #     key_points = ', '.join(news_article.get('key_points', [news_article.get('title', '')]))
 
 #     user_prompt_v1 = f"""Category: {category.upper()}
@@ -5631,12 +5670,14 @@
 # सारांश: {summary}
 # मुद्दे: {key_points}
 
-# वरील बातमीचे facts वापरून 15-18 मराठी lines तयार करा."""
+# वरील बातमीचे facts वापरून 15-18 मराठी lines तयार करा.
+# जरी माहिती कमी असली तरी उपलब्ध तथ्यांवर आधारित पूर्ण script लिहा."""
 
-#     user_prompt_v2 = f"""खालील बातमीच्या facts वापरून 15 मराठी वाक्ये लिहा.
-# बातमी: {news_article['title']}. {summary[:200]}
-# प्रत्येक वाक्य नवीन line वर लिहा.
-# शेवटची line: "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी." """
+#     user_prompt_v2 = f"""खालील बातमीवर 15 मराठी वाक्ये लिहा.
+# बातमी: {news_article['title']}. {safe_truncate(summary, 200)}
+# - प्रत्येक वाक्य नवीन line वर लिहा
+# - फक्त मराठीत लिहा, हिंदी नको
+# - शेवटची line: "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी." """
 
 #     prompts = [user_prompt_v1, user_prompt_v2]
 
@@ -5668,7 +5709,7 @@
 
 #             is_refusal = any(kw.lower() in script.lower() for kw in REFUSAL_KEYWORDS)
 #             if is_refusal:
-#                 print(f"   ⚠️ Attempt {attempt}: Model refused - retrying...")
+#                 print(f"   ⚠️ Attempt {attempt}: Model refused ({script[:60]}...) - retrying...")
 #             else:
 #                 print(f"   ⚠️ Attempt {attempt}: Not valid Marathi - retrying...")
 
@@ -5683,6 +5724,7 @@
 #             print(f"   ⚠️ Attempt {attempt} error: {e}")
 #             await asyncio.sleep(2)
 
+#     # ✅ Improved fallback uses actual article title
 #     title = news_article.get('title', 'एक महत्त्वाची बातमी')[:80]
 #     return f"""महाराष्ट्रात एक महत्त्वाची घडामोड समोर आली आहे.
 
@@ -5718,7 +5760,7 @@
 #     global total_input_tokens, total_output_tokens, total_cost
 
 #     print("=" * 70)
-#     print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v7.0")
+#     print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v8.0")
 #     print(f"🔍 Analysis : {ANALYSIS_MODEL}")
 #     print(f"✍️  Scripts  : {SCRIPT_MODEL}")
 #     print(f"🎯 Target   : {TARGET_SCRIPTS} scripts")
@@ -5882,7 +5924,6 @@ ANALYSIS_OUTPUT_COST = 1.0 / 1_000_000
 SCRIPT_INPUT_COST    = 2.0 / 1_000_000
 SCRIPT_OUTPUT_COST   = 8.0 / 1_000_000
 
-# ✅ IST Timezone
 IST = pytz.timezone('Asia/Kolkata')
 
 
@@ -5899,24 +5940,31 @@ VALID_CATEGORIES = [
     "education", "economy", "entertainment", "horror"
 ]
 
-# ✅ EXPANDED: catches Hindi + Marathi refusals too
+# ✅ EXPANDED: catches all refusal types including self-identification
 REFUSAL_KEYWORDS = [
     # English
     "I appreciate", "I should clarify", "I'm Perplexity",
     "search assistant", "I'm not able", "I cannot create",
     "Would you like", "clarify my role", "I'm an AI",
     "as an AI", "I don't create",
-    # ✅ NEW: Hindi refusals
+    # Hindi refusals
     "मुझे खेद है", "मैं इस अनुरोध", "खोज परिणामों में",
     "प्रदान किए गए", "कृपया स्पष्ट करें", "मैं सही तरीके",
     "विशिष्ट तथ्य नहीं", "आवश्यक माहिती",
-    # ✅ NEW: Marathi refusals
+    # Marathi refusals
     "मला खेद आहे", "मला क्षमस्व", "उत्तर देण्यासाठी आवश्यक",
     "शोध परिणामांमध्ये", "कृपया एक पूर्ण बातमी",
-    "अधिक संबंधित शोध", "विशिष्ट घटना", "तपशील पुनः तपास"
+    "अधिक संबंधित शोध", "विशिष्ट घटना", "तपशील पुनः तपास",
+    # ✅ NEW: self-identification as Perplexity/AI
+    "मी Perplexity", "मी perplexity", "माझी भूमिका",
+    "मूळ कार्याच्या विरुद्ध", "script लिहिण्याची विनंती",
+    "सूचना देणे", "संशोधित उत्तरे", "मी एक AI",
+    "script writer नाही", "मी तयार करू शकत नाही",
+    # ✅ NEW: fact-checking / clarification responses
+    "शोध निकालांमध्ये", "मेल होत नाही", "script तयार करू शकतो पण",
+    "विस्तृत search results", "स्पष्ट करा"
 ]
 
-# ✅ Skip utility/spiritual articles by title
 SKIP_TITLE_KEYWORDS = [
     'राशीभविष्य', 'राशिभविष्य', 'ज्योतिष', 'पूजा', 'अध्यात्म',
     'horoscope', 'rashifal', 'astrology', 'dharm', 'puja',
@@ -5925,7 +5973,6 @@ SKIP_TITLE_KEYWORDS = [
     'अध्यात्म बातम्या', 'धार्मिक', 'ज्योतिष'
 ]
 
-# ✅ Skip utility/spiritual articles by content
 SKIP_CONTENT_KEYWORDS = [
     'tv9 मराठी एक 24/7',
     'अध्यात्म बातम्यांचा विशेष विभाग',
@@ -5935,6 +5982,9 @@ SKIP_CONTENT_KEYWORDS = [
     'यूटिलिटी बातम्या',
     'utility news'
 ]
+
+# ✅ The exact CTA that must end every script
+SCRIPT_CTA = "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
 
 
 # ============================================================
@@ -5947,7 +5997,7 @@ processed_hashes    = set()
 
 
 # ============================================================
-# News Sites — 4 per site × 5 sites = 20
+# News Sites — increased fetch_limit to 30 to ensure 4 found
 # ============================================================
 NEWS_SITES = [
     {
@@ -5955,35 +6005,35 @@ NEWS_SITES = [
         "url": "https://www.tv9marathi.com/latest-news",
         "link_pattern": "tv9marathi.com",
         "target": 4,
-        "fetch_limit": 20
+        "fetch_limit": 30   # ✅ increased from 20 → 30
     },
     {
         "name": "ABP Majha",
         "url": "https://marathi.abplive.com/news",
         "link_pattern": "abplive.com",
         "target": 4,
-        "fetch_limit": 20
+        "fetch_limit": 30
     },
     {
         "name": "Lokmat",
         "url": "https://www.lokmat.com/latestnews/",
         "link_pattern": "lokmat.com",
         "target": 4,
-        "fetch_limit": 20
+        "fetch_limit": 30
     },
     {
         "name": "Maharashtra Times",
         "url": "https://maharashtratimes.com/",
         "link_pattern": "maharashtratimes.com",
         "target": 4,
-        "fetch_limit": 20
+        "fetch_limit": 30
     },
     {
         "name": "NDTV Marathi",
         "url": "https://marathi.ndtv.com/",
         "link_pattern": "marathi.ndtv.com",
         "target": 4,
-        "fetch_limit": 20
+        "fetch_limit": 30
     }
 ]
 
@@ -6140,23 +6190,103 @@ def sort_by_priority(item):
 # Safe Content Truncation — never cuts mid-Devanagari word
 # ============================================================
 def safe_truncate(text: str, max_chars: int) -> str:
-    """
-    ✅ NEW: Truncates text at a sentence boundary to avoid
-    cutting mid-word in Devanagari script.
-    """
     if len(text) <= max_chars:
         return text
     truncated = text[:max_chars]
-    # Find last sentence-ending punctuation within the truncated text
     for punct in ['।', '.', '!', '?', '\n']:
         last_pos = truncated.rfind(punct)
-        if last_pos > max_chars * 0.7:   # must be at least 70% through
+        if last_pos > max_chars * 0.7:
             return truncated[:last_pos + 1]
-    # Fallback: cut at last space to avoid mid-word cut
     last_space = truncated.rfind(' ')
     if last_space > max_chars * 0.7:
         return truncated[:last_space]
     return truncated
+
+
+# ============================================================
+# ✅ NEW: Script Completion Check & Callback
+# ============================================================
+def is_script_complete(script: str) -> bool:
+    """Check if script ends with the required CTA."""
+    return script.strip().endswith(SCRIPT_CTA.strip())
+
+
+def get_last_line(script: str) -> str:
+    """Get the last non-empty line of the script."""
+    lines = [l.strip() for l in script.strip().split('\n') if l.strip()]
+    return lines[-1] if lines else ""
+
+
+async def complete_script_if_needed(script: str, news_article: Dict) -> str:
+    """
+    ✅ NEW: If script is cut off or missing CTA, call AI to complete it.
+    Returns the completed script.
+    """
+    global total_input_tokens, total_output_tokens, total_cost
+
+    if is_script_complete(script):
+        return script
+
+    last_line = get_last_line(script)
+    print(f"   🔧 Script incomplete — last line: '{last_line[:60]}...' — completing...")
+
+    try:
+        completion_prompt = f"""खालील अर्धवट मराठी script पूर्ण करा.
+
+अर्धवट script:
+{script}
+
+नियम:
+- वरील script च्या पुढे फक्त उर्वरित lines लिहा
+- नवीन lines जोडा जेणेकरून एकूण 15-18 lines होतील
+- शेवटची line नक्की हीच असावी: "{SCRIPT_CTA}"
+- फक्त नवीन lines लिहा, जुन्या lines परत लिहू नका
+- फक्त मराठीत लिहा"""
+
+        response = perplexity_client.chat.completions.create(
+            model=SCRIPT_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": f'फक्त मराठी lines लिहा. शेवटची line नक्की हीच: "{SCRIPT_CTA}"'
+                },
+                {"role": "user", "content": completion_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=600   # only need the remaining lines
+        )
+
+        if hasattr(response, 'usage'):
+            i_t = response.usage.prompt_tokens
+            o_t = response.usage.completion_tokens
+            total_input_tokens  += i_t
+            total_output_tokens += o_t
+            total_cost += (i_t * SCRIPT_INPUT_COST) + (o_t * SCRIPT_OUTPUT_COST)
+
+        completion = response.choices[0].message.content.strip()
+        completion = re.sub(r'<think>.*?</think>', '', completion, flags=re.DOTALL).strip()
+        completion = completion.replace('```', '').strip()
+
+        # Check if completion itself is a refusal
+        if any(kw.lower() in completion.lower() for kw in REFUSAL_KEYWORDS):
+            print(f"   ⚠️ Completion refused — appending CTA directly")
+            return script.strip() + f"\n\n{SCRIPT_CTA}"
+
+        completed = script.strip() + "\n\n" + completion.strip()
+
+        # Final safety: ensure CTA exists
+        if not is_script_complete(completed):
+            completed = completed.strip() + f"\n\n{SCRIPT_CTA}"
+
+        print(f"   ✅ Script completed successfully")
+        return completed
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if any(code in error_str for code in ['402', '429', 'credit', 'quota', 'insufficient']):
+            raise CreditExhaustedException(str(e))
+        print(f"   ⚠️ Completion error: {e} — appending CTA directly")
+        return script.strip() + f"\n\n{SCRIPT_CTA}"
 
 
 # ============================================================
@@ -6261,7 +6391,6 @@ async def scrape_multiple_marathi_sources():
                     href  = link_tag.get('href', '')
                     title = link_tag.get_text(strip=True)
 
-                    # ✅ Skip spiritual/utility titles early
                     if any(kw.lower() in title.lower() for kw in SKIP_TITLE_KEYWORDS):
                         continue
 
@@ -6277,7 +6406,6 @@ async def scrape_multiple_marathi_sources():
                             '/games/', '/jokes/', '/terms-and-conditions',
                             '/topic/', '/widget/', '/livetv',
                             'articlelist', '/live',
-                            # ✅ Skip spiritual/utility URL paths
                             '/utility/', '/utilities/',
                             '/adhyatma/', '/astrology/', '/rashifal/',
                             '/horoscope/', '/jyotish/', '/puja/',
@@ -6286,8 +6414,8 @@ async def scrape_multiple_marathi_sources():
                         ])):
 
                         if href.startswith('/'):
-                            base = (site['url'].split('/')[0] + '//'
-                                    + site['url'].split('/')[2])
+                            base = (site['url'].split('/') + '//'
+                                    + site['url'].split('/'))[1]
                             href = base + href
 
                         if href.startswith('http'):
@@ -6302,7 +6430,8 @@ async def scrape_multiple_marathi_sources():
 
                 print(f"📋 Found {len(unique_links)} unique links")
 
-                for article in unique_links[:site['fetch_limit']]:
+                # ✅ No hard cap — iterate all unique_links until target reached
+                for article in unique_links:
                     if len(site_articles) >= site['target']:
                         break
 
@@ -6312,7 +6441,6 @@ async def scrape_multiple_marathi_sources():
                     markdown = await fetch_article_with_retry(crawler, article['link'])
                     content  = markdown if markdown else article['title']
 
-                    # ✅ Skip if content is utility/spiritual
                     if any(kw.lower() in content.lower() for kw in SKIP_CONTENT_KEYWORDS):
                         print(f"   ⏭️  Skipped (utility/spiritual content)")
                         continue
@@ -6323,7 +6451,6 @@ async def scrape_multiple_marathi_sources():
                         site_articles.append({
                             'title':            article['title'],
                             'link':             article['link'],
-                            # ✅ safe_truncate instead of raw [:3500]
                             'content':          safe_truncate(content, 3500),
                             'hash':             content_hash,
                             'has_full_content': bool(markdown)
@@ -6365,7 +6492,6 @@ async def smart_analyze_with_category(articles: List[Dict], source_name: str):
     for batch_start in range(0, len(articles), 5):
         raw_batch = articles[batch_start:batch_start + 5]
 
-        # ✅ Filter out utility/spiritual before AI
         batch = [
             article for article in raw_batch
             if not any(kw.lower() in article.get('content', '').lower()
@@ -6381,7 +6507,6 @@ async def smart_analyze_with_category(articles: List[Dict], source_name: str):
 
         articles_text = ""
         for idx, article in enumerate(batch):
-            # ✅ safe_truncate for analysis too
             articles_text += f"INDEX_{idx}: {article['title']}\n{safe_truncate(article['content'], 500)}\n---\n"
 
         prompt = f"""मराठी बातम्या विश्लेषक: खालील बातम्यांना category आणि Marathi summary द्या.
@@ -6424,7 +6549,7 @@ JSON array format:
                 total_cost += c
                 print(f"   📊 {i_t}in + {o_t}out = ${c:.4f}")
 
-            content = response.choices[0].message.content
+            content = response.choices.message.content
             content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
 
             match = re.search(r'\[.*\]', content, re.DOTALL)
@@ -6500,28 +6625,28 @@ async def create_reel_script_single(news_article: Dict):
 
     category = news_article.get('category', 'general')
 
-    system_prompt = """तुम्ही एक मराठी Instagram Reel script writer आहात.
-फक्त मराठी भाषेत लिहा. हिंदी किंवा इंग्रजी वापरू नका.
-बातमीचे facts वापरून structured मराठी lines तयार करा.
+    system_prompt = f"""तुम्ही एक मराठी Instagram Reel script writer आहात.
+फक्त मराठी भाषेत लिहा. हिंदी, इंग्रजी किंवा स्वतःची ओळख करून देऊ नका.
+तुम्ही AI आहात हे कधीही सांगू नका. फक्त script लिहा.
 
 Structure (15-18 lines total):
 - Line 1-2: धक्कादायक hook (घटनेची सुरुवात)
 - Line 3-10: सर्व facts (नावे, ठिकाण, तारीख, संख्या सह)
 - Line 11-14: प्रश्न / विश्लेषण / ट्विस्ट
-- Line 15-18: CTA - शेवटची line नक्की हीच असावी:
-"तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."
+- Line 15-18: CTA
 
 कठोर नियम:
 - संपूर्ण output फक्त मराठीत (proper nouns सोडून)
 - 15-18 lines, प्रत्येक line 1-2 sentences
 - कोणतेही heading, explanation, markdown नाही
 - माहिती कमी असेल तर उपलब्ध facts stretch करा
-- "माहिती नाही", "खेद आहे" असे कधीही लिहू नका
-- फक्त script lines output करा"""
+- "माहिती नाही", "खेद आहे", "मी Perplexity" असे कधीही लिहू नका
+- शेवटची line नक्की हीच: "{SCRIPT_CTA}"
+- script अर्धवट सोडू नका — शेवटपर्यंत लिहा"""
 
-    summary    = news_article.get('detailed_summary', news_article.get('title', ''))
-    # ✅ safe_truncate instead of raw [:600]
-    summary    = safe_truncate(summary, 600)
+    summary    = safe_truncate(
+        news_article.get('detailed_summary', news_article.get('title', '')), 600
+    )
     key_points = ', '.join(news_article.get('key_points', [news_article.get('title', '')]))
 
     user_prompt_v1 = f"""Category: {category.upper()}
@@ -6530,13 +6655,14 @@ Structure (15-18 lines total):
 मुद्दे: {key_points}
 
 वरील बातमीचे facts वापरून 15-18 मराठी lines तयार करा.
+शेवटची line नक्की: "{SCRIPT_CTA}"
 जरी माहिती कमी असली तरी उपलब्ध तथ्यांवर आधारित पूर्ण script लिहा."""
 
     user_prompt_v2 = f"""खालील बातमीवर 15 मराठी वाक्ये लिहा.
 बातमी: {news_article['title']}. {safe_truncate(summary, 200)}
 - प्रत्येक वाक्य नवीन line वर लिहा
-- फक्त मराठीत लिहा, हिंदी नको
-- शेवटची line: "तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी." """
+- फक्त मराठीत लिहा, हिंदी/इंग्रजी नको
+- शेवटची line नक्की: "{SCRIPT_CTA}" """
 
     prompts = [user_prompt_v1, user_prompt_v2]
 
@@ -6559,31 +6685,34 @@ Structure (15-18 lines total):
                 total_output_tokens += o_t
                 total_cost += (i_t * SCRIPT_INPUT_COST) + (o_t * SCRIPT_OUTPUT_COST)
 
-            script = response.choices[0].message.content.strip()
+            script = response.choices.message.content.strip()
             script = re.sub(r'<think>.*?</think>', '', script, flags=re.DOTALL).strip()
             script = script.replace('```', '').strip()
 
+            # ✅ Check for refusal first
+            if any(kw.lower() in script.lower() for kw in REFUSAL_KEYWORDS):
+                print(f"   ⚠️ Attempt {attempt}: Refusal detected — '{script[:60]}...' — retrying...")
+                continue
+
             if is_valid_marathi_script(script):
+                # ✅ COMPLETION CALLBACK: fix cut-off before returning
+                script = await complete_script_if_needed(script, news_article)
                 return script
 
-            is_refusal = any(kw.lower() in script.lower() for kw in REFUSAL_KEYWORDS)
-            if is_refusal:
-                print(f"   ⚠️ Attempt {attempt}: Model refused ({script[:60]}...) - retrying...")
-            else:
-                print(f"   ⚠️ Attempt {attempt}: Not valid Marathi - retrying...")
+            print(f"   ⚠️ Attempt {attempt}: Not valid Marathi - retrying...")
 
+        except CreditExhaustedException:
+            raise
         except Exception as e:
             error_str = str(e).lower()
             if any(code in error_str for code in [
                 '402', '429', 'credit', 'quota',
                 'insufficient', 'balance', 'billing'
             ]):
-                print(f"\n💳 CREDITS EXHAUSTED during script generation!")
                 raise CreditExhaustedException(str(e))
             print(f"   ⚠️ Attempt {attempt} error: {e}")
             await asyncio.sleep(2)
 
-    # ✅ Improved fallback uses actual article title
     title = news_article.get('title', 'एक महत्त्वाची बातमी')[:80]
     return f"""महाराष्ट्रात एक महत्त्वाची घडामोड समोर आली आहे.
 
@@ -6609,7 +6738,7 @@ Structure (15-18 lines total):
 
 जबरी खबरी सोबत राहा, सत्य जाणून घ्या.
 
-तुमचं काय मत आहे? कमेंट करून सांगा आणि फॉलो करा जबरी खबरी."""
+{SCRIPT_CTA}"""
 
 
 # ============================================================
@@ -6619,7 +6748,7 @@ async def main():
     global total_input_tokens, total_output_tokens, total_cost
 
     print("=" * 70)
-    print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v8.0")
+    print("🚀 JABARI KHABRI - SMART NEWS SCRAPER v9.0")
     print(f"🔍 Analysis : {ANALYSIS_MODEL}")
     print(f"✍️  Scripts  : {SCRIPT_MODEL}")
     print(f"🎯 Target   : {TARGET_SCRIPTS} scripts")
@@ -6655,6 +6784,11 @@ async def main():
             seen_hashes.add(h)
 
     print(f"\n✅ Total unique articles: {len(unique_articles)}")
+
+    # ✅ Warn if fewer than target scraped
+    if len(unique_articles) < TARGET_SCRIPTS:
+        print(f"⚠️  Only {len(unique_articles)} articles found — "
+              f"will generate {len(unique_articles)} scripts instead of {TARGET_SCRIPTS}")
 
     category_counts = {}
     for article in unique_articles:
@@ -6699,8 +6833,9 @@ async def main():
             total_ch    = len(script.replace(' ', '').replace('\n', ''))
             marathi_pct = (dev_chars / max(total_ch, 1)) * 100
             lang_tag    = "🇮🇳" if marathi_pct > 35 else "⚠️"
-            print(f"   📝 {lang_tag} ({marathi_pct:.0f}%) | "
-                  f"🔗 {article.get('link','')[:60]}...")
+            cta_tag     = "✅" if is_script_complete(script) else "⚠️ NO CTA"
+            print(f"   📝 {lang_tag} ({marathi_pct:.0f}%) | CTA:{cta_tag} | "
+                  f"🔗 {article.get('link','')[:55]}...")
 
             success = save_to_google_sheets(
                 worksheet,
