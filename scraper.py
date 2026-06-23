@@ -8456,7 +8456,7 @@ async def check_api_credits():
         perplexity_client.chat.completions.create(
             model=ANALYSIS_MODEL,
             messages=[{"role": "user", "content": "ok"}],
-            max_tokens=1
+            max_tokens=16
         )
         print("✅ API credits OK")
         return True
